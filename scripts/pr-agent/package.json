@@ -1,0 +1,11 @@
+{
+  "name": "browserforge-pr-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The pull request agent: reviews with Claude and merges when every rule holds. Its own folder and lockfile, so the workflow installs only this and nothing from a pull request.",
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.6.0",
+    "zod": "4.6.7"
+  }
+}

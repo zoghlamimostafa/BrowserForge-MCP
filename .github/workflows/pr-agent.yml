@@ -1,0 +1,173 @@
+name: PR agent
+
+# One agent per pull request. Every PR gets its own run, named "PR agent #N", with its own lock, so PRs never wait for or interfere with each other:
+#   review  (a PR is opened or updated)  Claude reviews it, the verdict is posted, a clean fork PR's CI is approved
+#   merge   (CI finished for a commit)   the PR is squash-merged if every rule in scripts/pr-agent/policy.mjs holds
+#   sweep   (every 6 hours, or by hand)  one job per open PR that has no review of its current commit yet
+# Read docs/PR_AGENT.md first. In short: this workflow only ever runs the agent from the default branch and never checks out, installs
+# or runs anything from a pull request; it reads the PR through the GitHub API. It needs the repository secret ANTHROPIC_API_KEY; without
+# it nothing is reviewed and nothing is merged.
+run-name: ${{ github.event.pull_request.number && format('PR agent #{0}', github.event.pull_request.number) || (github.event.inputs.pr && format('PR agent #{0}', github.event.inputs.pr)) || format('PR agent ({0})', github.event_name) }}
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: 'Pull request number to review now (leave empty to sweep every open PR)'
+        required: false
+
+permissions: {}
+
+jobs:
+  review:
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # One agent per PR: a newer push to the same PR replaces its running review.
+    concurrency:
+      group: pr-agent-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write
+      checks: read
+    steps:
+      # pull_request_target runs in the context of the base branch. Check out that branch explicitly, and never the pull request's head.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --prefix scripts/pr-agent --ignore-scripts
+      - run: node scripts/pr-agent/agent.mjs review --pr "$PR_NUMBER"
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_TOKEN: ${{ github.token }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+  merge:
+    # CI finished for some commit. For a fork's PR the workflow_run event does not name the PR, so the agent finds it by the commit.
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: pr-agent-merge-${{ github.event.workflow_run.head_sha }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write
+      checks: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --prefix scripts/pr-agent --ignore-scripts
+      - run: node scripts/pr-agent/agent.mjs merge --sha "$HEAD_SHA"
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+
+  discover:
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.pr == '')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    outputs:
+      prs: ${{ steps.pending.outputs.prs }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --prefix scripts/pr-agent --ignore-scripts
+      - id: pending
+        run: node scripts/pr-agent/agent.mjs pending
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  sweep:
+    needs: discover
+    if: needs.discover.outputs.prs != '[]' && needs.discover.outputs.prs != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    name: PR agent #${{ matrix.pr }}
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        pr: ${{ fromJSON(needs.discover.outputs.prs) }}
+    # The same lock as the review job: a PR never has two agents at once.
+    concurrency:
+      group: pr-agent-${{ matrix.pr }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write
+      checks: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --prefix scripts/pr-agent --ignore-scripts
+      - run: node scripts/pr-agent/agent.mjs review --pr "$PR_NUMBER"
+        env:
+          PR_NUMBER: ${{ matrix.pr }}
+          GITHUB_TOKEN: ${{ github.token }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+  manual:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.pr != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: pr-agent-${{ github.event.inputs.pr }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write
+      checks: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --prefix scripts/pr-agent --ignore-scripts
+      - run: node scripts/pr-agent/agent.mjs review --pr "$PR_NUMBER"
+        env:
+          PR_NUMBER: ${{ github.event.inputs.pr }}
+          GITHUB_TOKEN: ${{ github.token }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

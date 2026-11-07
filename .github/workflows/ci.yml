@@ -28,6 +28,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # The pull request agent (scripts/pr-agent) has its own small set of dependencies; its tests import them.
+      - run: npm ci --prefix scripts/pr-agent --ignore-scripts
       # The generated PHP client is checked with a real PHP. Linux and Windows runners ship one; macOS runners do not.
       - name: Install PHP (macOS)
         if: runner.os == 'macOS'
