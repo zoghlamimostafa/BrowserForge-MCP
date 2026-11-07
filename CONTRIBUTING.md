@@ -19,6 +19,7 @@ You need Node 22 or newer, and Firefox and/or Chrome for the end-to-end tests.
 ```bash
 git clone https://github.com/zoghlamimostafa/BrowserForge-MCP.git && cd BrowserForge-MCP
 npm ci
+npm ci --prefix scripts/pr-agent --ignore-scripts   # the PR agent's own few dependencies; its tests need them
 npm run build
 npm run typecheck && npm run lint
 npm test                 # unit + security + integration (no browser needed)
@@ -35,6 +36,7 @@ Layout: `packages/*` are libraries, `apps/mcp-server` is the MCP server, `apps/f
 * **Docs.** If a user would notice the change, update the README or the relevant page in `docs/`, and `docs/LIMITATIONS.md` if something is not covered.
 * **No personal data.** Never commit real names, emails, CVs, tokens or captured traffic. Use obviously fake data in tests and examples.
 * Match the code around yours: naming, comment density, the existing helpers (look before you add a new one).
+* **An agent reviews every pull request.** Claude reads the whole diff, and the PR is merged automatically when the review is clean, the tests pass on Ubuntu, macOS and Windows, and the change is small and does not touch the files listed in [docs/PR_AGENT.md](docs/PR_AGENT.md) (dependencies, installer and release files, and the CI/agent files themselves wait for a maintainer). The review comment says exactly what it found or why it is waiting. Your first pull request's CI waits for the agent's approval; this is expected.
 
 ## Ground rules for changes
 
