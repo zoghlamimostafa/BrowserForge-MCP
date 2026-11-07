@@ -4,13 +4,15 @@ import { describe, expect, it } from 'vitest';
 
 // The translations may change the words, never the commands, badges or where a link points.
 const ROOT = join(__dirname, '../..');
-const en = readFileSync(join(ROOT, 'README.md'), 'utf8');
+// Windows checks files out with CRLF line endings; the checks below are written for LF.
+const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8').replace(/\r\n/g, '\n');
+const en = read('README.md');
 const codeBlocks = (md: string) => [...md.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]!.split('\n').map((l) => l.trim()).join('\n').trim());
 const absoluteLinks = (md: string) => new Set([...md.matchAll(/\]\((https?:[^)\s]+)\)|href="(https?:[^"]+)"|src="(https?:[^"]+)"/g)].map((m) => m[1] ?? m[2] ?? m[3]!));
 
 describe.each([['fr', 'Français', /^---$/m], ['ar', 'العربية', /^---$/m]])('docs/README.%s.md', (code, label) => {
   const file = `docs/README.${code}.md`;
-  const tr = readFileSync(join(ROOT, file), 'utf8');
+  const tr = read(file);
 
   it('is linked from the English README and links back', () => {
     expect(en).toContain(`[${label}](docs/README.${code}.md)`);
@@ -51,7 +53,7 @@ describe.each([['fr', 'Français', /^---$/m], ['ar', 'العربية', /^---$/m]
 });
 
 describe('Arabic page', () => {
-  const ar = readFileSync(join(ROOT, 'docs/README.ar.md'), 'utf8');
+  const ar = read('docs/README.ar.md');
   it('wraps the text in a right-to-left block', () => {
     expect(ar).toContain('<div dir="rtl">');
     expect((ar.match(/<div/g) ?? []).length).toBe((ar.match(/<\/div>/g) ?? []).length);
