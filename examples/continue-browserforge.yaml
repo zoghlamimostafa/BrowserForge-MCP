@@ -1,0 +1,12 @@
+# Save as .continue/mcpServers/browserforge.yaml in your project (or ~/.continue/mcpServers/browserforge.yaml).
+# This uses stdio: Continue starts "browserforge stdio" itself, so there is no token to paste.
+# Do not also run "browserforge serve": both want port 7345 (use `--port` on one of them if you must).
+name: BrowserForge
+version: 0.0.1
+schema: v1
+mcpServers:
+  - name: browserforge
+    type: stdio
+    command: browserforge
+    args:
+      - stdio

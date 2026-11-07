@@ -1,0 +1,14 @@
+# Alternative to continue-browserforge.yaml: connect to a daemon you already run with "browserforge serve".
+# UNCONFIRMED: Continue's docs say streamable-http servers take "requestOptions" in the same format as models (a "headers" map),
+# but show no example with headers. If the connection is refused with 401, use the stdio file instead.
+# Put BROWSERFORGE_MCP_TOKEN=<contents of ~/.config/browserforge/mcp-token> in Continue's .env, never in this file.
+name: BrowserForge (HTTP)
+version: 0.0.1
+schema: v1
+mcpServers:
+  - name: browserforge
+    type: streamable-http
+    url: http://127.0.0.1:7345/mcp
+    requestOptions:
+      headers:
+        Authorization: Bearer ${{ secrets.BROWSERFORGE_MCP_TOKEN }}

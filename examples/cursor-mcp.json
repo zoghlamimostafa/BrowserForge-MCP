@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "browserforge": {
+      "url": "http://127.0.0.1:7345/mcp",
+      "headers": { "Authorization": "Bearer ${env:BROWSERFORGE_MCP_TOKEN}" }
+    }
+  }
+}
