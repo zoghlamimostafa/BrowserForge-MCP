@@ -7,7 +7,8 @@ name: PR agent
 # Read docs/PR_AGENT.md first. In short: this workflow only ever runs the agent from the default branch and never checks out, installs
 # or runs anything from a pull request; it reads the PR through the GitHub API. It needs the repository secret ANTHROPIC_API_KEY; without
 # it nothing is reviewed and nothing is merged.
-run-name: ${{ github.event.pull_request.number && format('PR agent #{0}', github.event.pull_request.number) || (github.event.inputs.pr && format('PR agent #{0}', github.event.inputs.pr)) || format('PR agent ({0})', github.event_name) }}
+# Quoted on purpose: an unquoted " #" starts a YAML comment and cuts the expression off, and GitHub then rejects the whole file.
+run-name: "${{ github.event.pull_request.number && format('PR agent #{0}', github.event.pull_request.number) || (github.event.inputs.pr && format('PR agent #{0}', github.event.inputs.pr)) || format('PR agent ({0})', github.event_name) }}"
 
 on:
   pull_request_target:
@@ -113,7 +114,7 @@ jobs:
     if: needs.discover.outputs.prs != '[]' && needs.discover.outputs.prs != ''
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    name: PR agent #${{ matrix.pr }}
+    name: "PR agent #${{ matrix.pr }}"
     strategy:
       fail-fast: false
       max-parallel: 3
