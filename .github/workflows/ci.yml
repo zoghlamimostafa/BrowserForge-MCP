@@ -13,9 +13,8 @@ jobs:
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Linux is the platform the project is developed and verified on. Windows and macOS are run so problems show up, but they do not block
-    # a merge yet: make them required (delete this line) once they have been green for a while.
-    continue-on-error: ${{ matrix.os != 'ubuntu-latest' }}
+    # Every system is required: a failure on Windows or macOS fails the run. (They were allowed to fail until they had been green for a
+    # while; the last 12 runs passed on all three. Linux is still where the project is developed and verified by hand.)
     strategy:
       fail-fast: false
       matrix:
@@ -45,7 +44,6 @@ jobs:
   package:
     name: install package (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.os != 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
