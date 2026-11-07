@@ -65,6 +65,7 @@ The review prompt tells the model that the PR (title, description and diff) is *
    ```bash
    gh secret set ANTHROPIC_API_KEY -R zoghlamimostafa/BrowserForge-MCP
    ```
+   If `gh` cannot reach GitHub, add the same secret in the web page instead: **Settings → Secrets and variables → Actions → New repository secret**, name `ANTHROPIC_API_KEY`.
 3. In **Settings → Actions → General**, check that workflows may run for pull requests from forks (the default is fine), and that "Require approval for first-time contributors" stays on: the agent gives the approval itself after a clean review.
 4. Try it on one PR: **Actions → PR agent → Run workflow → pr = the number**, and read the comment it posts.
 
