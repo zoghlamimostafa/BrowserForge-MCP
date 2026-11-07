@@ -5,6 +5,9 @@ import { createTestApi } from '@browserforge/plugin-sdk/testing';
 // @ts-expect-error plain JS example plugin
 import plugin from '../../examples/plugins/github-stats/index.js';
 
+// Hermetic: every public name resolves to one public address; tests that need another answer override it.
+vi.mock('node:dns/promises', () => ({ lookup: vi.fn(async () => [{ address: '140.82.112.6', family: 4 }]) }));
+
 const manifest = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../../examples/plugins/github-stats/package.json'), 'utf8')).browserforge;
 const cleanups: (() => void)[] = [];
 afterEach(() => { vi.unstubAllGlobals(); while (cleanups.length) cleanups.pop()!(); });
