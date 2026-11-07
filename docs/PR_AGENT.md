@@ -23,7 +23,7 @@ A PR is merged only when **all** of these are true:
 1. It is open, not a draft, aimed at `main`, and merges cleanly.
 2. It has no `do-not-merge`, `needs-human` or `no-agent` label.
 3. The review is of **the exact commit being merged** (a newer push needs a new review), is `approve`, is confident, has **no high or critical finding**, and does not suspect that the diff is talking to the reviewer. The stored review must be complete and well-formed: a comment with a missing field or an unknown value counts as no review.
-4. **Every required check passed for that commit**: tests and package installs on Ubuntu, macOS and Windows. CI treats macOS and Windows as "allowed to fail", so the run as a whole can look green when they fail; the agent checks each one on its own. The newest attempt of each check counts, so a re-run that is still queued blocks an older success.
+4. **Every required check passed for that commit**: tests and package installs on Ubuntu, macOS and Windows. CI now fails when any of them fails, and the agent still checks each one on its own, so it never depends on the run as a whole. The newest attempt of each check counts, so a re-run that is still queued blocks an older success.
 5. It is small enough to review whole: at most 60 files, 2,500 changed lines, 250,000 characters of diff.
 6. It does not touch the files below.
 

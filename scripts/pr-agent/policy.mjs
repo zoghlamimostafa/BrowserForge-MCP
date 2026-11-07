@@ -4,8 +4,8 @@
 /** Who the author is, as GitHub reports it. These two may change the agent's protected files only with a human's sign-off (see below). */
 export const TRUSTED_ASSOCIATIONS = ['OWNER', 'MEMBER'];
 
-/** The checks that must have succeeded for the exact commit being merged. The macOS and Windows ones are listed on purpose: CI marks them
- *  "continue on error", so the run as a whole stays green even when they fail. */
+/** The checks that must have succeeded for the exact commit being merged. They are listed one by one on purpose, even though CI now fails when any
+ *  of them fails: the agent never relies on the run's overall result (macOS and Windows used to be "continue on error"). */
 export const REQUIRED_CHECKS = [
   'test (ubuntu-latest)',
   'test (macos-latest)',
