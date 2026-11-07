@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { localHostReason } from './address.js';
 
 export const ID_RE = /^[a-z][a-z0-9-]{1,30}$/;
 export const PREFIX_RE = /^[a-z][a-z0-9]{1,15}$/;
@@ -26,9 +27,9 @@ const permissionsSchema = z.object({
   network: z.array(z.string().max(200).refine((value) => {
     try {
       const url = new URL(value);
-      return url.protocol === 'https:' && !url.username && !url.password && !url.hostname.includes('*') && url.origin === value;
+      return url.protocol === 'https:' && !url.username && !url.password && !url.hostname.includes('*') && url.origin === value && !localHostReason(url.hostname);
     } catch { return false; }
-  }, 'Use an exact HTTPS origin, e.g. https://api.github.com (no path, credentials or wildcard)')).max(10).optional(),
+  }, 'Use an exact HTTPS origin of a public host, e.g. https://api.github.com (no path, credentials, wildcard, or loopback/private/local address)')).max(10).optional(),
 });
 
 export const manifestSchema = z
