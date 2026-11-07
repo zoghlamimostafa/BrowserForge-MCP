@@ -217,7 +217,7 @@ packages/knowledge         local reference documents (BM25) and run traces
 packages/flows             flow format, builder and exporters (Playwright, Selenium, Chrome Recorder, JSON)
 packages/plugin-sdk        what plugin authors import: manifest, permission-checked api, test helper
 plugins/                   reference plugins (rendercv)
-skills/                    reference skills (job-apply)
+skills/                    reference skills (job-apply, table-to-csv)
 packages/shared            errors, limits, redaction, path safety, tokens, logger
 tests/                     unit · security · integration · e2e (real browsers) · demo site
 docs/  examples/  CONTRIBUTING.md

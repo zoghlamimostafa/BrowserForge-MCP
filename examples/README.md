@@ -13,4 +13,4 @@ browserforge plugin add ./examples/plugins/hello
 browserforge skill add ./examples/skills/hello
 ```
 
-Real-world references: [`plugins/rendercv`](../plugins/rendercv) and [`skills/job-apply`](../skills/job-apply). Guides: [docs/PLUGINS.md](../docs/PLUGINS.md), [docs/SKILLS.md](../docs/SKILLS.md).
+Real-world references: [`plugins/rendercv`](../plugins/rendercv), [`skills/job-apply`](../skills/job-apply) and [`skills/table-to-csv`](../skills/table-to-csv) (a small skill with no plugin). Guides: [docs/PLUGINS.md](../docs/PLUGINS.md), [docs/SKILLS.md](../docs/SKILLS.md).
