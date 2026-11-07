@@ -1,5 +1,7 @@
 <div align="center">
 
+**English** · [Français](docs/README.fr.md) · [العربية](docs/README.ar.md)
+
 <img src="docs/assets/browserforge-overview.svg" alt="BrowserForge MCP: AI agents talk MCP to a local daemon, which drives your real Firefox or Chrome through an extension, with human approval for consequential actions" width="100%">
 
 # BrowserForge MCP
