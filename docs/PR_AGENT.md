@@ -22,8 +22,8 @@ A PR is merged only when **all** of these are true:
 
 1. It is open, not a draft, aimed at `main`, and merges cleanly.
 2. It has no `do-not-merge`, `needs-human` or `no-agent` label.
-3. The review is of **the exact commit being merged** (a newer push needs a new review), is `approve`, is confident, has **no high or critical finding**, and does not suspect that the diff is talking to the reviewer.
-4. **Every required check passed for that commit**: tests and package installs on Ubuntu, macOS and Windows. CI treats macOS and Windows as "allowed to fail", so the run as a whole can look green when they fail; the agent checks each one on its own.
+3. The review is of **the exact commit being merged** (a newer push needs a new review), is `approve`, is confident, has **no high or critical finding**, and does not suspect that the diff is talking to the reviewer. The stored review must be complete and well-formed: a comment with a missing field or an unknown value counts as no review.
+4. **Every required check passed for that commit**: tests and package installs on Ubuntu, macOS and Windows. CI treats macOS and Windows as "allowed to fail", so the run as a whole can look green when they fail; the agent checks each one on its own. The newest attempt of each check counts, so a re-run that is still queued blocks an older success.
 5. It is small enough to review whole: at most 60 files, 2,500 changed lines, 250,000 characters of diff.
 6. It does not touch the files below.
 
@@ -53,7 +53,9 @@ The review prompt tells the model that the PR (title, description and diff) is *
 - It runs the agent **from `main` only**. It never checks out, installs, builds or runs anything from a pull request: it reads the PR through the GitHub API.
 - The agent has its own folder and lockfile (`scripts/pr-agent/`), installed with `--ignore-scripts`, so a PR cannot change what gets installed.
 - The only secret it uses is `ANTHROPIC_API_KEY`. It has no secrets to give a pull request, because the PR's code never runs there.
+- **The review is of a snapshot, not of a moving target.** The diff and the file list are read from a comparison pinned to the two commit ids, never from the PR's live head. If the PR moves while Claude is reviewing, the result is dropped: nothing is posted, no CI is approved, and a new run reviews the new commit.
 - Every merge passes the reviewed commit's SHA to GitHub, which refuses the merge if the branch moved after the checks.
+- A merge made with the workflow token does not start the push workflows, so after a merge the agent starts the tests on `main` itself, and the website deployment too when the merge changed `site/**` or the demo files it publishes.
 - The decision and its reasons are a comment on the PR, so there is always a trail.
 
 ## Turning it on
@@ -70,7 +72,7 @@ The default model is `claude-opus-5-5` (`PR_AGENT_MODEL` changes it). A review i
 
 ## Turning it off, or holding one PR
 
-- Hold one PR: label it `do-not-merge` (or `needs-human`, or `no-agent` to keep the agent away entirely).
+- Hold one PR: label it `do-not-merge` or `needs-human` (it is still reviewed, and never merged). Label it `no-agent` to keep the agent away entirely: no review, no comment, no CI approval, no merge.
 - Pause everything: **Actions → PR agent → ⋯ → Disable workflow**.
 - Undo a merge: revert it like any other commit.
 

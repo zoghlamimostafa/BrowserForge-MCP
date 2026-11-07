@@ -59,9 +59,9 @@ export function sizeProblems(pr, files) {
 export function checkProblems(checkRuns, required = REQUIRED_CHECKS) {
   const out = [];
   for (const name of required) {
-    // The newest run with that name wins (a re-run replaces an older failure).
-    const runs = checkRuns.filter((c) => c.name === name).sort((a, b) => String(b.started_at ?? '').localeCompare(String(a.started_at ?? '')));
-    const run = runs[0];
+    // The newest attempt wins (a re-run replaces an older failure, and a queued re-run blocks an older success). Check-run ids only grow, and
+    // unlike started_at they exist from the moment a run is queued.
+    const run = checkRuns.filter((c) => c.name === name).sort((a, b) => (b.id ?? 0) - (a.id ?? 0))[0];
     if (!run) out.push(`${name}: has not run`);
     else if (run.status !== 'completed') out.push(`${name}: still running`);
     else if (run.conclusion !== 'success') out.push(`${name}: ${run.conclusion}`);
@@ -124,14 +124,33 @@ export function renderComment({ sha, verdict, summary, findings = [], notes = []
   return lines.join('\n');
 }
 
-/** Reads the marker back out of a comment body written by the agent. Returns null for anything else. */
+const VERDICTS = ['approve', 'request_changes', 'needs_human'];
+const CONFIDENCE = ['high', 'medium', 'low'];
+const SEVERITIES = ['low', 'medium', 'high', 'critical'];
+
+/** True only for a complete, well-formed stored verdict. A marker missing a field (or with an unknown value) must never count as an approval. */
+export function validStoredVerdict(v) {
+  return Boolean(v) && typeof v === 'object'
+    && /^[0-9a-f]{40}$/.test(String(v.sha))
+    && VERDICTS.includes(v.verdict)
+    && CONFIDENCE.includes(v.confidence)
+    && typeof v.prompt_injection_suspected === 'boolean'
+    && Array.isArray(v.findings)
+    && v.findings.every((f) => f && typeof f === 'object' && SEVERITIES.includes(f.severity));
+}
+
+/** Reads the marker back out of a comment body written by the agent. Returns null for anything else, including an incomplete marker. */
 export function parseComment(body) {
   const m = new RegExp(`<!-- ${MARKER} (\\{.*?\\}) -->`, 's').exec(body ?? '');
   if (!m) return null;
   try {
     const v = JSON.parse(m[1]);
-    return v && typeof v.sha === 'string' && typeof v.verdict === 'string' ? v : null;
+    return validStoredVerdict(v) ? v : null;
   } catch {
     return null;
   }
 }
+
+/** Files the Website workflow watches (keep in step with .github/workflows/pages.yml). A merge made with the workflow token does not start it. */
+const PAGES_WATCHED = [/^site\//, /^docs\/assets\/demo/, /^docs\/assets\/social-preview\.png$/, /^\.github\/workflows\/pages\.yml$/];
+export const pagesAffected = (paths) => paths.map(norm).some((p) => PAGES_WATCHED.some((re) => re.test(p)));

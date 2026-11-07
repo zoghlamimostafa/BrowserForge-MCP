@@ -19,6 +19,7 @@ You need Node 22 or newer, and Firefox and/or Chrome for the end-to-end tests.
 ```bash
 git clone https://github.com/zoghlamimostafa/BrowserForge-MCP.git && cd BrowserForge-MCP
 npm ci
+npm ci --prefix scripts/pr-agent --ignore-scripts   # the PR agent's own few dependencies; its tests need them
 npm run build
 npm run typecheck && npm run lint
 npm test                 # unit + security + integration (no browser needed)

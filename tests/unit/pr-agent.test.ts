@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 // @ts-expect-error plain JS module
-import { LIMITS, REQUIRED_CHECKS, changedPaths, checkProblems, mergeBlockers, parseComment, protectedFiles, renderComment, sizeProblems, verdictProblems } from '../../scripts/pr-agent/policy.mjs';
+import { LIMITS, REQUIRED_CHECKS, changedPaths, checkProblems, mergeBlockers, pagesAffected, parseComment, protectedFiles, renderComment, sizeProblems, verdictProblems } from '../../scripts/pr-agent/policy.mjs';
 // @ts-expect-error plain JS module
 import { reviewPullRequest } from '../../scripts/pr-agent/review.mjs';
 
 const SHA = 'a'.repeat(40);
-const green = REQUIRED_CHECKS.map((name: string) => ({ name, status: 'completed', conclusion: 'success', started_at: '2026-11-05T10:00:00Z' }));
+const green = REQUIRED_CHECKS.map((name: string, i: number) => ({ id: 1000 + i, name, status: 'completed', conclusion: 'success', started_at: '2026-11-05T10:00:00Z' }));
 const approve = { sha: SHA, verdict: 'approve', confidence: 'high', findings: [], prompt_injection_suspected: false };
 const file = (filename: string, extra: object = {}) => ({ filename, status: 'modified', additions: 3, deletions: 1, ...extra });
 const basePr = { number: 7, state: 'open', draft: false, title: 'Add a thing', body: '', user: { login: 'someone' }, author_association: 'FIRST_TIME_CONTRIBUTOR', base: { ref: 'main' }, head: { sha: SHA }, mergeable: true, labels: [] as { name: string }[] };
@@ -50,10 +50,16 @@ describe('size, checks and the review itself', () => {
     expect(checkProblems(green.map((c: any) => (c.name === 'test (ubuntu-latest)' ? { ...c, conclusion: 'skipped' } : c)))).toEqual(['test (ubuntu-latest): skipped']);
   });
   it('lets a re-run replace an older failure, and not the other way round', () => {
-    const failedThenPassed = [...green, { name: 'test (macos-latest)', status: 'completed', conclusion: 'failure', started_at: '2026-11-05T09:00:00Z' }];
+    const failedThenPassed = [...green, { id: 1, name: 'test (macos-latest)', status: 'completed', conclusion: 'failure', started_at: '2026-11-05T09:00:00Z' }];
     expect(checkProblems(failedThenPassed)).toEqual([]);
-    const passedThenFailed = [...green, { name: 'test (macos-latest)', status: 'completed', conclusion: 'failure', started_at: '2026-11-05T11:00:00Z' }];
+    const passedThenFailed = [...green, { id: 9999, name: 'test (macos-latest)', status: 'completed', conclusion: 'failure', started_at: '2026-11-05T11:00:00Z' }];
     expect(checkProblems(passedThenFailed)).toEqual(['test (macos-latest): failure']);
+  });
+  it('a re-run that is still queued blocks an older success (a queued run has no start time yet)', () => {
+    const queued = [...green, { id: 9999, name: 'test (windows-latest)', status: 'queued', conclusion: null, started_at: null }];
+    expect(checkProblems(queued)).toEqual(['test (windows-latest): still running']);
+    const running = [...green, { id: 9999, name: 'test (windows-latest)', status: 'in_progress', conclusion: null, started_at: '2026-11-05T11:00:00Z' }];
+    expect(checkProblems(running)).toEqual(['test (windows-latest): still running']);
   });
   it('only an unworried, confident approve counts', () => {
     expect(verdictProblems(approve)).toEqual([]);
@@ -111,6 +117,30 @@ describe("the agent's comment", () => {
     expect(parseComment(null)).toBeNull();
     expect(parseComment('<!-- pr-agent:verdict {not json} -->')).toBeNull();
     expect(parseComment('<!-- pr-agent:verdict {"verdict":"approve"} -->')).toBeNull(); // no sha
+  });
+  it('accepts a stored verdict only when it is complete: a bare {sha, verdict} must never count as an approval', () => {
+    const marker = (v: object) => `<!-- pr-agent:verdict ${JSON.stringify(v)} -->`;
+    const full = { sha: SHA, verdict: 'approve', confidence: 'high', findings: [], prompt_injection_suspected: false };
+    expect(parseComment(marker(full))).not.toBeNull();
+    expect(parseComment(marker({ sha: SHA, verdict: 'approve' }))).toBeNull();
+    expect(parseComment(marker({ ...full, confidence: undefined }))).toBeNull();
+    expect(parseComment(marker({ ...full, findings: undefined }))).toBeNull();
+    expect(parseComment(marker({ ...full, prompt_injection_suspected: undefined }))).toBeNull();
+    expect(parseComment(marker({ ...full, verdict: 'merge-it' }))).toBeNull();
+    expect(parseComment(marker({ ...full, confidence: 'certain' }))).toBeNull();
+    expect(parseComment(marker({ ...full, findings: [{ severity: 'harmless', file: 'a', issue: 'b' }] }))).toBeNull();
+    expect(parseComment(marker({ ...full, findings: ['oops'] }))).toBeNull();
+    expect(parseComment(marker({ ...full, sha: 'abc' }))).toBeNull();
+  });
+});
+
+describe('the website', () => {
+  it('is rebuilt after a merge only when the merge touched what it publishes', () => {
+    expect(pagesAffected(['site/index.html'])).toBe(true);
+    expect(pagesAffected(['docs/assets/demo-api.mp4'])).toBe(true);
+    expect(pagesAffected(['docs/assets/social-preview.png'])).toBe(true);
+    expect(pagesAffected(['.github/workflows/pages.yml'])).toBe(true);
+    expect(pagesAffected(['README.md', 'docs/INSTALL.md', 'docs/assets/browserforge-overview.svg', 'packages/x/site/y.ts'])).toBe(false);
   });
 });
 

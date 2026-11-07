@@ -3,7 +3,7 @@
 //   merge  --sha S   CI finished for commit S: merge its PR if every rule in policy.mjs holds
 // Flags: --dry-run (change nothing, print what would happen).  Environment: GITHUB_TOKEN, GITHUB_REPOSITORY, ANTHROPIC_API_KEY (review only).
 // Nothing here checks out, installs or executes anything from a pull request.
-import { LIMITS, MARKER, REQUIRED_CHECKS, changedPaths, mergeBlockers, parseComment, protectedFiles, renderComment, sizeProblems, verdictProblems } from './policy.mjs';
+import { LIMITS, MARKER, REQUIRED_CHECKS, changedPaths, mergeBlockers, pagesAffected, parseComment, protectedFiles, renderComment, sizeProblems, verdictProblems } from './policy.mjs';
 import { reviewPullRequest } from './review.mjs';
 
 const args = process.argv.slice(2);
@@ -54,7 +54,10 @@ async function getPr(n) {
   }
   return gh('GET', `/repos/${REPO}/pulls/${n}`);
 }
-const getFiles = (n) => gh('GET', `/repos/${REPO}/pulls/${n}/files?per_page=100`);
+/** The change, pinned to the exact commits: a push that arrives while the agent works cannot swap what was reviewed for something else. */
+const snapshot = (pr) => `/repos/${REPO}/compare/${pr.base.sha}...${pr.head.sha}`;
+const getFilesAt = async (pr) => (await gh('GET', `${snapshot(pr)}?per_page=100`)).files ?? [];
+const getDiffAt = (pr) => gh('GET', snapshot(pr), undefined, 'application/vnd.github.v3.diff');
 
 /** The agent's latest verdict comment (written by github-actions[bot] only: nobody else can post as it) for this exact commit. */
 async function findVerdict(n, sha) {
@@ -91,8 +94,9 @@ async function review(n) {
   const pr = await getPr(n);
   if (pr.state !== 'open') return log(`#${n} is ${pr.state}: nothing to do`);
   if (pr.draft) return log(`#${n} is a draft: the agent waits until it is ready`);
-  const files = await getFiles(n);
+  if ((pr.labels ?? []).some((l) => l.name === 'no-agent')) return log(`#${n} is labelled no-agent: nothing to do`);
   const sha = pr.head.sha;
+  const files = await getFilesAt(pr);
   const { existing } = await findVerdict(n, sha);
   const prot = protectedFiles(changedPaths(files), pr.author_association);
   const big = sizeProblems(pr, files);
@@ -105,13 +109,18 @@ async function review(n) {
   } else {
     let diff = '';
     try {
-      diff = await gh('GET', `/repos/${REPO}/pulls/${n}`, undefined, 'application/vnd.github.v3.diff');
+      diff = await getDiffAt(pr);
     } catch (e) {
       diff = 'x'.repeat(LIMITS.diffChars + 1); // GitHub refused to produce the diff (too large): treated as "too big to read whole"
     }
     verdict = await reviewPullRequest({ pr, files, diff });
     blockers = verdictProblems(verdict);
   }
+
+  // The review took a while. If the PR moved meanwhile, this verdict is of a commit that is no longer the head: say nothing about it
+  // (a new run is already on its way for the new commit) and, above all, approve nothing.
+  const after = await gh('GET', `/repos/${REPO}/pulls/${n}`);
+  if (after.head.sha !== sha) return log(`#${n} moved from ${sha.slice(0, 8)} to ${after.head.sha.slice(0, 8)} during the review: dropping this result`);
 
   const notes = [];
   if (blockers.length === 0 && pr.head.repo?.full_name !== pr.base.repo.full_name) notes.push(...(await approveCi(sha)));
@@ -124,7 +133,7 @@ async function tryMerge(n, defaultBranch) {
   const branch = defaultBranch ?? (await getRepo()).default_branch;
   const pr = await getPr(n);
   if (pr.state !== 'open') return log(`#${n} is ${pr.state}: nothing to merge`);
-  const files = await getFiles(n);
+  const files = await getFilesAt(pr);
   const { verdict } = await findVerdict(n, pr.head.sha);
   const checkRuns = (await gh('GET', `/repos/${REPO}/commits/${pr.head.sha}/check-runs?per_page=100`)).check_runs ?? [];
   const blockers = mergeBlockers({ pr, files, verdict, checkRuns, defaultBranch: branch });
@@ -142,6 +151,8 @@ async function tryMerge(n, defaultBranch) {
   await gh('POST', `/repos/${REPO}/issues/${n}/comments`, { body: `Merged by the PR agent: the review of \`${pr.head.sha.slice(0, 8)}\` was "approve" and all ${REQUIRED_CHECKS.length} required checks passed (tests and package install on Ubuntu, macOS and Windows).` }).catch(() => undefined);
   // A merge made with the workflow token does not start the push workflows, so start the tests on the new main by hand.
   await gh('POST', `/repos/${REPO}/actions/workflows/ci.yml/dispatches`, { ref: branch }).catch((e) => log(`could not start CI on ${branch}: ${e.message}`));
+  // Same for the website: its push trigger is also silent for a token-made merge.
+  if (pagesAffected(changedPaths(files))) await gh('POST', `/repos/${REPO}/actions/workflows/pages.yml/dispatches`, { ref: branch }).catch((e) => log(`could not start the website workflow: ${e.message}`));
 }
 
 async function mergeBySha(sha) {
