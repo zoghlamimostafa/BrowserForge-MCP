@@ -244,6 +244,18 @@ describe('skills', () => {
     expect(template).not.toMatch(/@[a-z0-9-]+\.[a-z]{2,}/i); // no real email address
   });
 
+  it('ships a table-to-csv skill whose tool and workflow exist', () => {
+    const skill = loadSkillDir(path.join(ROOT, 'skills/table-to-csv'), 'repo');
+    expect(skill).toMatchObject({ name: 'table-to-csv', requiresPlugins: [], requiresTools: ['browser_extract_table'] });
+    expect(skill.description).toMatch(/CSV/);
+    const steps = fillWorkflow(skill.workflows['list-tables']!, { url: 'http://127.0.0.1:1/tables' });
+    expect(steps.map((s) => s.tool)).toEqual(['browser_navigate', 'browser_extract_table']);
+    expect(steps[0]!.args.url).toBe('http://127.0.0.1:1/tables');
+    // The instructions must name the arguments the tool really has, and must not tell the agent to skip a human check.
+    for (const word of ['tableIndex', 'saveTo', 'format: "csv"', 'maxRows', 'ask the user which one']) expect(skill.body).toContain(word);
+    expect(skill.body).not.toMatch(/skip (the )?approval|without asking/i);
+  });
+
   it('parses SKILL.md and fills workflow inputs safely', () => {
     expect(parseSkillMd('---\nname: x\ndescription: "d: e"\n---\nBody')).toEqual({ meta: { name: 'x', description: 'd: e' }, body: 'Body' });
     expect(parseSkillMd('just text').body).toBe('just text');

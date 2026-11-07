@@ -1,0 +1,9 @@
+{
+  "name": "List the tables on a page",
+  "description": "Open a page and list its data tables (index, caption, columns, size). Choose one, then export it with browser_extract_table (tableIndex, format csv, saveTo).",
+  "inputs": { "url": { "description": "Address of the page", "required": true } },
+  "steps": [
+    { "tool": "browser_navigate", "args": { "url": "{{url}}" }, "label": "Open {{url}}" },
+    { "tool": "browser_extract_table", "args": {}, "label": "List the tables" }
+  ]
+}
