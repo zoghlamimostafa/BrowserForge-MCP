@@ -95,11 +95,15 @@ export function commit(store: PluginStore, staged: Staged, enabled = true): Inst
   return rec;
 }
 
-/** Search npm for packages tagged with the `browserforge-plugin` keyword. Only called when the user runs `plugin search`. */
-export async function searchNpm(words: string, fetchFn: typeof fetch = fetch): Promise<{ name: string; version: string; description: string }[]> {
-  const url = `https://registry.npmjs.org/-/v1/search?text=${encodeURIComponent(`keywords:browserforge-plugin ${words}`.trim())}&size=20`;
+/** Search npm for packages tagged with a keyword (`browserforge-plugin` or `browserforge-skill`). Only called when the user runs `plugin search` or `skill search`. */
+export async function searchNpm(words: string, fetchFn: typeof fetch = fetch, keyword: 'browserforge-plugin' | 'browserforge-skill' = 'browserforge-plugin'): Promise<{ name: string; version: string; description: string; publisher?: string; date?: string }[]> {
+  const url = `https://registry.npmjs.org/-/v1/search?text=${encodeURIComponent(`keywords:${keyword} ${words}`.trim())}&size=20`;
   const res = await fetchFn(url, { signal: AbortSignal.timeout(10_000) });
   if (!res.ok) throw new Error(`npm search failed (${res.status})`);
-  const body = (await res.json()) as { objects?: { package: { name: string; version: string; description?: string } }[] };
-  return (body.objects ?? []).map((o) => ({ name: o.package.name, version: o.package.version, description: o.package.description ?? '' }));
+  const body = (await res.json()) as { objects?: { package: { name: string; version: string; description?: string; date?: string; publisher?: { username?: string } } }[] };
+  return (body.objects ?? []).map((o) => ({
+    name: o.package.name, version: o.package.version, description: o.package.description ?? '',
+    ...(o.package.publisher?.username ? { publisher: o.package.publisher.username } : {}),
+    ...(o.package.date ? { date: o.package.date } : {}),
+  }));
 }

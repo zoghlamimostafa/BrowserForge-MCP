@@ -149,7 +149,7 @@ Exported scripts stop before submits, sends and uploads unless you say `FLOW_CON
 
 Anyone can add to BrowserForge without touching the core:
 
-* **Skills**: a folder with a `SKILL.md` (and optional ready-made workflows). No code; agents read it. `browserforge skill new my-skill`. [docs/SKILLS.md](docs/SKILLS.md)
+* **Skills**: a folder with a `SKILL.md` (and optional ready-made workflows). No code; agents read it. `browserforge skill new my-skill`. Published ones are found with `browserforge skill search` and shown to you line by line before they are installed; nobody has reviewed them, so read before you say yes ([docs/SKILL_LIBRARY.md](docs/SKILL_LIBRARY.md)). [docs/SKILLS.md](docs/SKILLS.md)
 * **Plugins**: a small ES module that adds tools, with a manifest of exactly which folders, programs, browser access and public HTTPS origins it needs. You see that list in plain words and approve it before it is installed; a later version asking for more is switched off until you approve again. `browserforge plugin new my-tool`. [docs/PLUGINS.md](docs/PLUGINS.md)
 
 ```bash

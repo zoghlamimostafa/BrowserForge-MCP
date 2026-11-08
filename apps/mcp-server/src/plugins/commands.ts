@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { describePermissions, ID_RE, PREFIX_RE, samePermissions, type PluginDefinition, type PluginManifest, type SettingValue } from '@browserforge/plugin-sdk';
 import { commit, discard, readManifest, searchNpm, stage, type Staged } from './installer.js';
 import { loadSkillDir } from './skills.js';
+import type { Skill } from './types.js';
 import type { PluginStore } from './store.js';
 
 /** Terminal I/O, injectable so the consent flow can be tested. `ask` must return false when there is no human to ask. */
@@ -13,23 +14,67 @@ export interface Io {
   ask(question: string): Promise<boolean>;
 }
 
+const SKILL_NOTE =
+  'A skill is text that tells your agent what to do; it is not a program and cannot skip an approval. It can still steer your agent, so install it only if you would be happy to paste these instructions into your agent yourself. Nobody has reviewed it for you.';
 const WARNING =
   'A plugin is code that runs on this computer with your user rights. The permissions listed above are enforced on the plugin API, but a plugin can contain any code, so install only plugins whose author you trust.';
 
-function show(staged: Staged, io: Io, previous?: { version: string; granted: PluginManifest['permissions'] }): void {
-  const m = staged.manifest;
-  io.out(`\n${m.kind === 'skill' ? 'Skill package' : 'Plugin'}: ${m.id}  v${staged.version}  (${staged.packageName})\n${m.description}\n`);
-  if (m.kind === 'plugin') io.out(`Adds tools named: ${m.toolPrefix}_*\n`);
-  const settings = Object.entries(m.settings);
-  if (settings.length) io.out(`Settings you will configure:\n${settings.map(([k, s]) => `  - ${k} (${s.type}${s.required ? ', required' : ''}): ${s.description}`).join('\n')}\n`);
-  io.out(`It asks permission to:\n${describePermissions(m).map((l) => `  - ${l}`).join('\n')}\n`);
-  if (previous) io.out(previous.version === staged.version ? '' : `Update: v${previous.version} -> v${staged.version}\n`);
-  io.out(`\n${WARNING}\n\n`);
+/**
+ * Text written by someone else goes to the terminal through this. Escape sequences and other control characters can move the cursor, erase lines or hide
+ * words, so what you read before saying yes could differ from what you approve. Tabs and newlines stay; everything else becomes a visible dot.
+ */
+export function plain(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return String(text).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, '\u00b7');
 }
 
-export async function pluginAdd(store: PluginStore, source: string, io: Io): Promise<boolean> {
+/** A skill's whole instructions are shown before anyone installs it. Beyond this the text is too long to read in a terminal, and nobody should approve what they did not read. */
+const SKILL_MAX_LINES = 400;
+const SKILL_MAX_CHARS = 40_000;
+
+/** Print a skill the way a person must read it before saying yes: all of it, as plain text, with where it came from. Throws when it is too long to show whole. */
+export function showSkill(skill: Skill, io: Io): void {
+  const lines = plain(skill.body).split('\n');
+  if (lines.length > SKILL_MAX_LINES || skill.body.length > SKILL_MAX_CHARS) {
+    throw new Error(`The instructions of '${skill.name}' are too long to read here (${lines.length} lines). Read ${path.join(skill.dir, 'SKILL.md')} yourself and, if you trust it, copy the folder into <config>/skills/.`);
+  }
+  const workflows = Object.keys(skill.workflows);
+  io.out(`\nSkill: ${plain(skill.name)}\n${plain(skill.description)}\nIt gives your agent these instructions (written by its author, not by you), all ${lines.length} lines:\n\n${lines.map((l) => `  | ${l}`).join('\n')}\n`);
+  if (workflows.length) io.out(`\nIt also ships workflows: ${workflows.map(plain).join(', ')} (they only use browser/network/api/form tools and still pause for approvals)\n`);
+  if (skill.requiresTools.length || skill.requiresPlugins.length) io.out(`It needs: ${plain([...skill.requiresTools, ...skill.requiresPlugins].join(', '))}\n`);
+  io.out('\n');
+}
+
+/** The skills inside an installed-from-npm package: the package folder itself and anything under skills/. A package that offers none is refused. */
+function skillsInPackage(root: string): Skill[] {
+  const found: Skill[] = [];
+  if (fs.existsSync(path.join(root, 'SKILL.md'))) found.push(loadSkillDir(root, 'package'));
+  const nested = path.join(root, 'skills');
+  if (fs.existsSync(nested)) for (const d of fs.readdirSync(nested)) if (fs.existsSync(path.join(nested, d, 'SKILL.md'))) found.push(loadSkillDir(path.join(nested, d), 'package'));
+  if (!found.length) throw new Error('This package says it is a skill but contains no SKILL.md, so there is nothing to install.');
+  return found;
+}
+
+function show(staged: Staged, io: Io, previous?: { version: string; granted: PluginManifest['permissions'] }): void {
+  const m = staged.manifest;
+  io.out(`\n${m.kind === 'skill' ? 'Skill package' : 'Plugin'}: ${m.id}  v${staged.version}  (${plain(staged.packageName)})\n${plain(m.description)}\n`);
+  if (m.kind === 'plugin') io.out(`Adds tools named: ${m.toolPrefix}_*\n`);
+  const settings = Object.entries(m.settings);
+  if (settings.length) io.out(`Settings you will configure:\n${settings.map(([k, s]) => `  - ${plain(k)} (${s.type}${s.required ? ', required' : ''}): ${plain(s.description)}`).join('\n')}\n`);
+  if (m.kind === 'skill') for (const skill of skillsInPackage(staged.pkgRoot)) showSkill(skill, io); // the text that steers your agent comes first: it is what you are really approving
+  // A skill is text, not a program: it has no permissions to list, and the warning about code does not apply to it.
+  if (m.kind === 'plugin') io.out(`It asks permission to:\n${describePermissions(m).map((l) => `  - ${plain(l)}`).join('\n')}\n`);
+  if (previous) io.out(previous.version === staged.version ? '' : `Update: v${previous.version} -> v${staged.version}\n`);
+  io.out(`\n${m.kind === 'skill' ? SKILL_NOTE : WARNING}\n\n`);
+}
+
+/** `only: 'skill'` is how `skill add` reaches this: a package that runs code is refused there, so "skill" always means text. */
+export async function pluginAdd(store: PluginStore, source: string, io: Io, only?: 'skill'): Promise<boolean> {
   const staged = await stage(store, source);
   try {
+    if (only === 'skill' && staged.manifest.kind !== 'skill') {
+      throw new Error(`'${staged.packageName}' is a plugin: it runs code on this computer. Use: browserforge plugin add ${source} (it shows what it may do first). 'skill add' only installs text instructions.`);
+    }
     const existing = store.get(staged.manifest.id);
     if (existing) {
       io.out(`'${staged.manifest.id}' is already installed (v${existing.version}). Use: browserforge plugin update ${existing.id}\n`);
@@ -37,7 +82,7 @@ export async function pluginAdd(store: PluginStore, source: string, io: Io): Pro
       return false;
     }
     show(staged, io);
-    if (!(await io.ask(`Install ${staged.manifest.id} with these permissions?`))) {
+    if (!(await io.ask(staged.manifest.kind === 'skill' ? `Install the skill package ${staged.manifest.id} (you have read its instructions above)?` : `Install ${staged.manifest.id} with these permissions?`))) {
       discard(staged);
       io.out('Not installed.\n');
       return false;
@@ -231,10 +276,16 @@ export function skillNew(name: string, dir: string, io: Io): string {
   return root;
 }
 
-export async function skillAdd(configDir: string, source: string, io: Io): Promise<boolean> {
+export async function skillAdd(configDir: string, source: string, io: Io, store?: PluginStore): Promise<boolean> {
   const src = path.resolve(expand(source));
+  // A folder with a SKILL.md is installed as it is. Anything else (an npm package name, a folder with a package.json) is a skill package: it goes through the
+  // package installer, which shows the same instructions, records what was approved and refuses anything that runs code.
+  if (!fs.existsSync(path.join(src, 'SKILL.md'))) {
+    if (!store) throw new Error(`${src} has no SKILL.md.`);
+    return pluginAdd(store, source, io, 'skill');
+  }
   const skill = loadSkillDir(src, 'user');
-  io.out(`\nSkill: ${skill.name}\n${skill.description}\nIt gives your agent these instructions (written by its author, not by you):\n\n${skill.body.split('\n').slice(0, 25).map((l) => `  | ${l}`).join('\n')}\n${Object.keys(skill.workflows).length ? `\nIt also ships workflows: ${Object.keys(skill.workflows).join(', ')} (they only use browser/network/api/form tools and still pause for approvals)\n` : ''}\n`);
+  showSkill(skill, io);
   if (!(await io.ask(`Install the skill '${skill.name}'?`))) {
     io.out('Not installed.\n');
     return false;
@@ -244,6 +295,17 @@ export async function skillAdd(configDir: string, source: string, io: Io): Promi
   fs.cpSync(src, dest, { recursive: true, filter: (p) => !p.includes(`${path.sep}node_modules`) && !p.includes(`${path.sep}.git`) });
   io.out(`Installed. Restart the BrowserForge server to load it; it appears as /mcp__browserforge__${skill.name} in Claude Code.\n`);
   return true;
+}
+
+/** Finds skill packages by keyword. A search result is a lead, never a recommendation: anyone can publish with this keyword and nothing here has been reviewed. */
+export async function skillSearch(words: string, io: Io, fetchFn: typeof fetch = fetch): Promise<void> {
+  const found = await searchNpm(words, fetchFn, 'browserforge-skill');
+  if (!found.length) {
+    io.out('Nothing found with the keyword "browserforge-skill" on npm.\n');
+    return;
+  }
+  io.out(`${found.map((f) => `${plain(f.name)}@${plain(f.version)}  by ${plain(f.publisher ?? 'unknown')}${f.date ? `, published ${plain(f.date.slice(0, 10))}` : ''}\n    ${plain(f.description).replace(/\s+/g, ' ').slice(0, 160)}`).join('\n')}\n\n`);
+  io.out('Nobody has reviewed these: anyone can publish a package with this keyword, and a skill is text that steers your agent.\nInstall with: browserforge skill add <name>   (it shows you every line of the instructions first and asks)\n');
 }
 
 export function skillList(configDir: string, store: PluginStore, io: Io, discover: (dir: string, store: PluginStore) => { name: string; description: string; source: string }[]): void {

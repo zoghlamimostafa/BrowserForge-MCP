@@ -26,7 +26,7 @@ Usage:
   browserforge tokens                                                    Print token file locations (and the extension token)
   browserforge dashboard [--print] [--port N]                            Open the dashboard (tools, plugins, skills, flows, local models) in your browser
   browserforge plugin add <npm-name|git-url|./folder> [--yes] | list | remove|enable|disable|update <id> | config <id> [key=value...] | new <id> | validate <folder> | search <words>
-  browserforge skill  add <folder> | list | new <name> | export <name> --to <dir>      Plugins and skills (see docs/PLUGINS.md)
+  browserforge skill  add <folder|npm-name> | search <words> | list | new <name> | export <name> --to <dir>      Skills: text for your agent (see docs/SKILLS.md)
   browserforge flow   list | export <id> --format <fmt> [--out FILE] [--defaults] | consolidate <site> --name N | to-skill <id> --name N   Recorded flows (see docs/FLOWS.md)
   browserforge logs   [--tail N] [--level debug|info|warn|error] [--since 30m|2h|1d]   Read the saved log (see docs/TROUBLESHOOTING.md)
   browserforge diagnostics [--since 1d]                                   A report to paste into a bug: versions, settings, recent warnings and errors
@@ -226,11 +226,12 @@ async function main(): Promise<void> {
         }
       }
       switch (sub) {
-        case 'add': await commands.skillAdd(cfg.configDir, need('folder'), io); return;
+        case 'add': await commands.skillAdd(cfg.configDir, need('folder-or-package'), io, store); return;
+        case 'search': await commands.skillSearch([target, ...rest].filter(Boolean).join(' '), io); return;
         case 'new': commands.skillNew(need('name'), values.dir ?? '.', io); return;
         case 'list': case undefined: commands.skillList(cfg.configDir, store, io, (d, st) => discoverSkills(d, st, () => undefined)); return;
         case 'export': commands.skillExport(cfg.configDir, need('name'), values.to ?? '.claude/skills', io); return;
-        default: throw new Error('Usage: browserforge skill add|list|new|export');
+        default: throw new Error('Usage: browserforge skill add|search|list|new|export');
       }
     }
     case 'flow': {

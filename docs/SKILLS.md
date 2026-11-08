@@ -57,12 +57,14 @@ Steps may use `browser_*`, `network_*`, `api_*`, `form_*` tools and plugin tools
 
 ```bash
 browserforge skill new my-skill          # scaffold
-browserforge skill add ./my-skill        # shows the instructions it gives your agent, asks, installs
+browserforge skill add ./my-skill        # shows every line of the instructions it gives your agent, asks, installs
+browserforge skill search <words>        # find published skills (npm keyword browserforge-skill)
+browserforge skill add <npm-name>        # same, for a published package
 browserforge skill list
 ```
 
-To share, put the folder in a git repository, or publish an npm package with `"browserforge": { "id": "...", "kind": "skill", "description": "..." }` and `skills/<name>/SKILL.md` inside; users install it with `browserforge plugin add <package>`.
+To share, put the folder in a git repository, or publish an npm package with the keyword `browserforge-skill`, `"browserforge": { "id": "...", "kind": "skill", "description": "..." }` and `skills/<name>/SKILL.md` inside; users install it with `browserforge skill add <package>`. **Read [SKILL_LIBRARY.md](SKILL_LIBRARY.md) first** if you publish or install shared skills: what a shared skill can and cannot do, and how a reviewed library could work (not built yet).
 
 ## What a skill can and cannot do
 
-It can shape what the agent does. It cannot run code, read files or bypass the approval gate: every browser action it leads to goes through the same checks as anything else. A skill from someone else is still text that influences your agent, so read it before you add it (`skill add` prints it for you).
+It can shape what the agent does. It cannot run code, read files or bypass the approval gate: every browser action it leads to goes through the same checks as anything else. A skill from someone else is still text that influences your agent, so read it before you add it (`skill add` prints all of it, as plain text, and refuses one that is too long to read). See [SKILL_LIBRARY.md](SKILL_LIBRARY.md).
