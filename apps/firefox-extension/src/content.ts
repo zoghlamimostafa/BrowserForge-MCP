@@ -133,15 +133,36 @@ function describe(el: Element) {
 }
 
 /**
- * querySelectorAll that also looks inside open shadow roots, in document order. Web-component pages (SmartRecruiters' `spl-*` forms,
- * some Workday widgets) keep their inputs in shadow roots, which plain querySelectorAll never reaches. Closed roots stay unreachable.
+ * The shadow root of an element, open or closed. A page hides a closed root from its own scripts (`el.shadowRoot` is null), but the browser gives an
+ * extension's content script a way in: `dom.openOrClosedShadowRoot` (Chrome 88+, Firefox 63+). This runs in the extension's isolated world and puts
+ * no code in the page, so it does not weaken the rule that an agent never runs JavaScript in the page; the approval gate treats such an element
+ * like any other. Roots that were found are remembered, because they can never be detached again.
+ */
+const knownRoots = new WeakMap<Element, ShadowRoot>();
+function shadowOf(el: Element): ShadowRoot | null {
+  if (el.shadowRoot) return el.shadowRoot;
+  const known = knownRoots.get(el);
+  if (known) return known;
+  let root: ShadowRoot | null = null;
+  try {
+    const dom = (api as unknown as { dom?: { openOrClosedShadowRoot?: (e: Element) => ShadowRoot | null } }).dom;
+    root = dom?.openOrClosedShadowRoot?.(el) ?? (el as Element & { openOrClosedShadowRoot?: ShadowRoot | null }).openOrClosedShadowRoot ?? null;
+  } catch { /* the API is missing or refused: treat the root as unreachable, as before */ }
+  if (root) knownRoots.set(el, root);
+  return root;
+}
+
+/**
+ * querySelectorAll that also looks inside shadow roots, open or closed, in document order. Web-component pages (SmartRecruiters' `spl-*` forms,
+ * some Workday widgets) keep their inputs in shadow roots, which plain querySelectorAll never reaches.
  */
 function deepAll(selector: string, root: ParentNode = document): Element[] {
   const out: Element[] = [];
   const visit = (node: ParentNode): void => {
     for (const el of node.querySelectorAll('*')) {
       if (el.matches(selector)) out.push(el);
-      if (el.shadowRoot) visit(el.shadowRoot);
+      const inner = shadowOf(el);
+      if (inner) visit(inner);
     }
   };
   visit(root);
@@ -279,7 +300,7 @@ function isDisabled(el: Element): boolean {
   return (el as HTMLButtonElement).disabled === true || el.getAttribute('aria-disabled') === 'true' || el.closest('fieldset[disabled]') !== null;
 }
 
-/** The CSS of each open shadow host between the document and this element, outermost first (each one relative to the root it sits in). */
+/** The CSS of each shadow host (open or closed) between the document and this element, outermost first (each one relative to the root it sits in). */
 function shadowChain(el: Element): string[] {
   const chain: string[] = [];
   let root = el.getRootNode();
@@ -302,8 +323,9 @@ function locatorTries(loc: Json): [string, () => Element[]][] {
         let root: ParentNode = document;
         for (const selector of hosts) {
           const matches = root.querySelectorAll(selector as string);
-          if (matches.length !== 1 || !matches[0]?.shadowRoot) return [];
-          root = matches[0].shadowRoot;
+          const inner = matches.length === 1 && matches[0] ? shadowOf(matches[0]) : null;
+          if (!inner) return [];
+          root = inner;
         }
         const matches = [...root.querySelectorAll(loc.css)];
         return matches.length === 1 ? matches : [];
@@ -325,8 +347,9 @@ function locatorTries(loc: Json): [string, () => Element[]][] {
         let scope: ParentNode = document;
         for (const host of (loc.shadow as string[] | undefined) ?? []) {
           const h = scope.querySelector(host);
-          if (!h?.shadowRoot) return [];
-          scope = h.shadowRoot;
+          const inner = h ? shadowOf(h) : null;
+          if (!inner) return [];
+          scope = inner;
         }
         return [...scope.querySelectorAll(String(loc.css))];
       } catch {
@@ -378,10 +401,10 @@ function isEditable(el: Element): boolean {
   return editableHost(el) !== null;
 }
 
-/** The focused element, looking through open shadow roots. */
+/** The focused element, looking through shadow roots (open or closed). */
 function deepActiveElement(): Element | null {
   let a: Element | null = document.activeElement;
-  while (a?.shadowRoot?.activeElement) a = a.shadowRoot.activeElement;
+  for (let inner = a && shadowOf(a); inner?.activeElement; inner = a && shadowOf(a)) a = inner.activeElement;
   return a && a !== document.body && a !== document.documentElement ? a : null;
 }
 
@@ -645,8 +668,9 @@ function snapshot(root: Element, maxNodes: number): Json {
     const own = [...el.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE).map((n) => n.textContent ?? '').join(' ').replace(/\s+/g, ' ').trim();
     if (own) node.text = own.slice(0, 200);
     if (depth < 40) {
-      if (el.shadowRoot) node.shadow = true;
-      const kids = [...(el.shadowRoot?.children ?? []), ...el.children].map((c) => walk(c, depth + 1)).filter(Boolean);
+      const inner = shadowOf(el);
+      if (inner) { node.shadow = true; if (inner.mode === 'closed' || !el.shadowRoot) node.shadowClosed = true; }
+      const kids = [...(inner?.children ?? []), ...el.children].map((c) => walk(c, depth + 1)).filter(Boolean);
       if (kids.length) node.children = kids;
     }
     return node;

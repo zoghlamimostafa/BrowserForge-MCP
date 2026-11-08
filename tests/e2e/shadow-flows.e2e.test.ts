@@ -64,17 +64,26 @@ describe.each(kinds)('exact recorded shadow scopes — %s', (kind) => {
     expect((await results()).length).toBe(before);
   });
 
-  it('refuses missing, ambiguous and closed hosts, or ambiguous targets, despite matching page controls', async () => {
+  it('refuses missing or ambiguous hosts, or ambiguous targets, despite matching page controls', async () => {
     expect((await stack.call('browser_navigate', { url: stack.demo.url + '/shadow-nested' })).isError).toBe(false);
     for (const locator of [
       { css: 'input[name="second"]', shadow: ['#missing'], label: 'Repeated field', testId: 'shared' },
       { css: 'input[name="second"]', shadow: ['outer-box'], label: 'Repeated field', testId: 'shared' },
-      { css: 'input[name="second"]', shadow: ['#closed'], label: 'Repeated field', testId: 'shared' },
       { css: 'input', shadow: ['#target', 'inner-box:nth-of-type(2)'], label: 'Repeated field', testId: 'shared' },
     ]) {
       await expect(stack.app.ctx.hub.call('resolve_locator', { locator, waitMs: 0 })).rejects.toMatchObject({ code: 'ELEMENT_NOT_FOUND' });
     }
     expect(await browser.evalInPage<string>('return document.querySelector("input").value')).toBe('');
+  });
+
+  it('reaches the control inside a closed host (not an identical one elsewhere), and a missing path inside it is still refused', async () => {
+    expect((await stack.call('browser_navigate', { url: stack.demo.url + '/shadow-nested' })).isError).toBe(false);
+    const locator = { css: 'input[name="second"]', shadow: ['#closed'], label: 'Repeated field', testId: 'shared' };
+    const found = await stack.app.ctx.hub.call('resolve_locator', { locator, waitMs: 0 }) as { ref: string };
+    expect((await stack.call('browser_fill_field', { ref: found.ref, value: 'inside-closed' })).isError).toBe(false);
+    expect(await browser.evalInPage<string>('return window.__closedInput.value')).toBe('inside-closed');
+    expect(await browser.evalInPage<string>('return document.querySelector("input").value')).toBe(''); // the lookalike outside was not touched
+    await expect(stack.app.ctx.hub.call('resolve_locator', { locator: { ...locator, css: 'input[name="nope"]' }, waitMs: 0 })).rejects.toMatchObject({ code: 'ELEMENT_NOT_FOUND' });
   });
 
   it('preserves a human recording refusal instead of retargeting a clipped host chain or selector', async () => {
