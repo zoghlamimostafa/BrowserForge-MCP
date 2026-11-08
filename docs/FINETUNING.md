@@ -28,6 +28,24 @@ Each line is `{"messages":[{"role":"system",...},{"role":"user",...},{"role":"as
 
 The user message is the same prompt the runner builds, minus the page headings and the retrieved examples (neither is stored). The assistant message is the exact JSON the model must produce.
 
+## 2b. Split, and measure before you train
+
+A fine-tune is only worth keeping if it wins on steps it has never seen, so measure first. Two commands, both local (they read your traces without changing them and talk only to your own model server):
+
+```
+browserforge decider split --include unlabelled --test 20 --out ./decider-data    # train.jsonl and test.jsonl, the same split every time
+browserforge decider eval  --include unlabelled --test 20 --limit 100 --model qwen3:4b-instruct --model qwen2.5:3b-instruct
+```
+
+* **The split keeps a whole run on one side** (`--by run`, the default), so steps of one demonstration never sit in both train and test. `--by host` keeps a whole site on one side instead, which measures how it does on a site it has never seen. The side is decided by a hash of the run (or site) and `--seed`, so adding new traces later does not reshuffle the old ones. Use the same `--include`, `--test`, `--by` and `--seed` for every model you compare.
+* **`eval` shows each held-out step to the model exactly as the goal runner does** (same system prompt, same prompt text, same constrained answer format, temperature 0) and compares its answer with what you did. **Right operation** is `CLICK` vs `TYPE` and so on; **right action** also needs the right row and the right value name. A model that cannot answer counts as wrong.
+* **Read the report with care.** The answer key is one person's choice on one day, and a form can be filled in another valid order, so a good model can score below 100%. The report prints a **95% interval** and a **for scale** line (how often always answering the most common operation would be right). Models whose intervals overlap have not been shown to differ, and a model that does not beat "for scale" has not learned anything about your pages.
+* **Check what you are training on.** The report's `byOp` lines and the `for scale` line show the mix. If most steps are `CLICK`, a fine-tune will mostly learn to click: collect more typing and selecting steps first. In one real set of Record-me demonstrations, 88% of the steps were `CLICK` (and about 6% `TYPE`), so a model that always says `CLICK` was already right about 89% of the time on the operation.
+* **Good labels are the limit.** `--include good` uses only runs labelled good, which is what the sections above ask for. If very few runs are labelled (see `knowledge_list`), `--include unlabelled` uses every run not judged bad, including demonstrations whose ending was never confirmed. That is useful to measure models, but it is not the clean training set this guide recommends.
+* The files `split` writes hold the **page controls of your sites** (never typed values). Keep them private, and think before uploading them to a rented GPU.
+
+When you have trained a model, put it in Ollama (section 4) and run the same `eval` with `--model bf-decider` next to the base: it is better only if it wins on the same held-out steps by more than the interval.
+
 ## 3. Train (on another machine or a rented GPU)
 
 A 4 GB laptop GPU is too small to train these models. Use Colab, a rented GPU or a bigger machine. A typical QLoRA run with Unsloth on `Qwen/Qwen3-4B-Instruct` (or the base of whatever `--decider-model` you use): rank 16, 1 to 3 epochs, learning rate around 2e-4, train on the assistant tokens only. Keep a held-out slice of the data to compare against the base model.

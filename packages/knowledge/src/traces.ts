@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Bm25Index } from './bm25.js';
@@ -170,14 +171,17 @@ export class TraceStore {
     return best && best.n >= minRepeats ? best.d : null;
   }
 
+  /** The steps that may be used as examples: they worked, were not served from memory, and their run is labelled good (or, with 'any', not labelled bad). */
+  examples(minLabel: 'good' | 'any' = 'good'): TraceStep[] {
+    return this.steps.filter((s) => s.result.ok && s.source !== 'memory' && (minLabel === 'any' ? this.labelOf(s.runId) !== 'bad' : this.labelOf(s.runId) === 'good'));
+  }
+
   /** Chat-format JSONL for LoRA fine-tuning (Unsloth / axolotl "messages"), from runs labelled good. */
   exportDataset(render: (s: TraceStep) => { system: string; user: string; assistant: string }, minLabel: 'good' | 'any' = 'good'): string[] {
-    return this.steps
-      .filter((s) => s.result.ok && s.source !== 'memory' && (minLabel === 'any' ? this.labelOf(s.runId) !== 'bad' : this.labelOf(s.runId) === 'good'))
-      .map((s) => {
-        const { system, user, assistant } = render(s);
-        return JSON.stringify({ messages: [{ role: 'system', content: system }, { role: 'user', content: user }, { role: 'assistant', content: assistant }] });
-      });
+    return this.examples(minLabel).map((s) => {
+      const { system, user, assistant } = render(s);
+      return JSON.stringify({ messages: [{ role: 'system', content: system }, { role: 'user', content: user }, { role: 'assistant', content: assistant }] });
+    });
   }
 
   /** Per-decider scorecard so the supervising agent can see which model is pulling its weight. */
@@ -196,4 +200,24 @@ export class TraceStore {
     }
     return { steps: this.steps.length, runs: runs.size, labelledGood: vals.filter((v) => v === 'good').length, labelledBad: vals.filter((v) => v === 'bad').length, byDecider };
   }
+}
+
+/**
+ * Splits steps into a training part and a held-out test part, the same way every time for the same seed.
+ *  - by 'run' (default): a whole run goes to one side, so steps of one demonstration never sit on both. This measures how well a model does on the kind of
+ *    pages you already use (the same sites can be on both sides, in different runs).
+ *  - by 'host': a whole site goes to one side. This measures how well it does on a site it has never seen.
+ * The side is decided by a hash of the run id (or host) and the seed, not by order, so adding new traces later does not reshuffle the old ones.
+ */
+export function splitTraces(steps: TraceStep[], opts: { testPercent: number; seed?: string; by?: 'run' | 'host' }): { train: TraceStep[]; test: TraceStep[] } {
+  const pct = Math.min(Math.max(opts.testPercent, 0), 100);
+  const by = opts.by ?? 'run';
+  const train: TraceStep[] = [];
+  const test: TraceStep[] = [];
+  for (const s of steps) {
+    const key = `${opts.seed ?? 'bf'}|${by === 'host' ? s.host : s.runId}`;
+    const bucket = createHash('sha256').update(key).digest().readUInt32BE(0) % 10_000;
+    (bucket < pct * 100 ? test : train).push(s);
+  }
+  return { train, test };
 }
