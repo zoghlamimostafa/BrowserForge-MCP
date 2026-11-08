@@ -27,6 +27,14 @@ const rawGet = (p: string, headers: Record<string, string>) =>
     req.end();
   });
 
+/** Same, with any method, for the one route that can change something. */
+const rawRequest = (method: string, p: string, headers: Record<string, string>) =>
+  new Promise<number>((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port: app.port, path: p, method, headers }, (res) => { res.resume(); res.on('end', () => resolve(res.statusCode!)); });
+    req.on('error', reject);
+    req.end();
+  });
+
 describe('dashboard security', () => {
   it('lets nothing run but its own two files, and nothing frame it', async () => {
     for (const p of ['/dashboard', '/dashboard/app.js', '/dashboard/app.css']) {
@@ -81,5 +89,56 @@ describe('dashboard security', () => {
     expect(fs.existsSync(file)).toBe(true);
     if (process.platform !== 'win32') expect(fs.statSync(file).mode & 0o077).toBe(0);
     expect(fs.readFileSync(file, 'utf8').trim().length).toBeGreaterThanOrEqual(32);
+  });
+
+  describe('the one route that can change something: switching a plugin on or off', () => {
+    const route = '/dashboard/plugins/hello/disable';
+    const self = () => `http://127.0.0.1:${app.port}`;
+    const post = (headers: Record<string, string>, p = route) => fetch(`${self()}${p}`, { method: 'POST', headers });
+    const good = () => ({ authorization: `Bearer ${app.ctx.config.dashboardToken}`, origin: self() });
+
+    it('refuses everything but a POST', async () => {
+      for (const method of ['GET', 'PUT', 'PATCH', 'DELETE']) {
+        expect((await fetch(`${self()}${route}`, { method, headers: good() })).status, method).toBe(405);
+      }
+    });
+
+    it('needs the page itself as the Origin: no Origin, another site, or a lookalike is refused even with the token', async () => {
+      const { origin: _o, ...noOrigin } = good();
+      expect((await post(noOrigin)).status).toBe(403);
+      for (const origin of ['http://evil.example', 'https://127.0.0.1', `http://localhost:${app.port}`, 'null', `${self()}.evil.com`, `${self()}/`]) {
+        expect((await post({ ...good(), origin })).status, origin).toBe(403);
+      }
+    });
+
+    it('needs the dashboard token, and no other key opens it', async () => {
+      const { authorization: _a, ...noToken } = good();
+      expect((await post(noToken)).status).toBe(401);
+      expect((await post({ ...good(), authorization: 'Bearer nope' })).status).toBe(401);
+      expect((await post({ ...good(), authorization: `Bearer ${app.ctx.config.mcpToken}` })).status).toBe(401);
+      expect((await post({ ...good(), authorization: `Bearer ${app.ctx.config.extensionToken}` })).status).toBe(401);
+      expect((await post({ ...good(), authorization: app.ctx.config.dashboardToken })).status).toBe(401); // needs the word Bearer
+      // Not in the address or a cookie either.
+      const { authorization: _b, ...bare } = good();
+      expect((await post(bare, `${route}?token=${app.ctx.config.dashboardToken}`)).status).toBe(401);
+      expect((await post({ ...bare, cookie: `token=${app.ctx.config.dashboardToken}` })).status).toBe(401);
+    });
+
+    it('refuses DNS-rebinding Host headers, even with the token and a matching Origin', async () => {
+      for (const host of ['evil.example.com', '127.0.0.1.evil.com', 'localhost.evil.com:7345']) {
+        expect(await rawRequest('POST', route, { host, origin: `http://${host}`, authorization: `Bearer ${app.ctx.config.dashboardToken}` }), host).toBe(403);
+      }
+    });
+
+    it('is unreachable with the MCP token, so an agent cannot use it to change its own tools', async () => {
+      const r = await fetch(`${self()}${route}`, { method: 'POST', headers: { authorization: `Bearer ${app.ctx.config.mcpToken}`, 'content-type': 'application/json' } });
+      expect([401, 403]).toContain(r.status);
+    });
+
+    it('sends the token to no address but its own, and has exactly one place that changes anything', () => {
+      expect(DASHBOARD_JS).not.toMatch(/https?:\/\//); // no outside address
+      expect(DASHBOARD_JS).toContain("method: 'POST'");
+      expect((DASHBOARD_JS.match(/method: 'POST'/g) ?? []).length).toBe(1); // one place that changes anything
+    });
   });
 });

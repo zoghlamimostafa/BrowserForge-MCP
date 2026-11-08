@@ -1,5 +1,5 @@
 /**
- * The read-only dashboard page: three static files kept as strings so the single-file release bundle needs no asset copying.
+ * The dashboard page: three static files kept as strings so the single-file release bundle needs no asset copying.
  * They contain no data. The page asks /dashboard/data with the dashboard token it finds in the URL fragment (`#t=...`), which the browser
  * never sends to a server. The Content-Security-Policy (see app.ts) allows only these two files, so nothing inline can run, and every piece
  * of text from a plugin, skill or flow is put on the page with textContent, never as HTML.
@@ -41,7 +41,7 @@ h2 { font-size:16px; margin:0 0 10px; } h3 { font-size:14px; margin:14px 0 6px; 
 nav { display:flex; gap:4px; padding:8px 24px 0; border-bottom:1px solid var(--line); background:var(--card); overflow-x:auto; }
 nav button { border:0; background:none; color:var(--muted); font:inherit; padding:8px 14px; cursor:pointer; border-bottom:2px solid transparent; white-space:nowrap; }
 nav button[aria-selected="true"] { color:var(--fg); border-bottom-color:var(--accent); font-weight:600; }
-nav button:focus-visible, .copy:focus-visible, input:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+nav button:focus-visible, .copy:focus-visible, .toggle:focus-visible, input:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 main { max-width:1100px; margin:0 auto; padding:20px 24px 40px; }
 footer { text-align:center; color:var(--muted); font-size:12px; padding:16px; }
 .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:12px; }
@@ -49,6 +49,7 @@ footer { text-align:center; color:var(--muted); font-size:12px; padding:16px; }
 .grid .card { margin-bottom:0; }
 .stat { font-size:26px; font-weight:650; line-height:1.2; } .label { color:var(--muted); font-size:13px; }
 .muted { color:var(--muted); } .small { font-size:13px; }
+.toggle { border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; padding:4px 12px; font-size:13px; cursor:pointer; margin-top:10px; } .toggle:disabled { opacity:.6; cursor:progress; } .small.err { color:var(--bad); }
 .badge { display:inline-block; font-size:12px; padding:1px 8px; border-radius:99px; border:1px solid var(--line); margin-left:6px; vertical-align:middle; }
 .badge.ok { color:var(--ok); border-color:var(--ok); } .badge.warn { color:var(--warn); border-color:var(--warn); } .badge.bad { color:var(--bad); border-color:var(--bad); }
 table { width:100%; border-collapse:collapse; font-size:14px; } th, td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--line); vertical-align:top; } th { color:var(--muted); font-weight:500; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
@@ -156,19 +157,48 @@ export const DASHBOARD_JS = String.raw`
       }) : empty('No tool matches.'));
   }
 
+  // The one thing this page can change. It asks the server, the server asks YOU in the browser extension, and nothing is written unless you approve there.
+  var toggling = {}; // plugin id -> { busy, ok, text }
+  function toggle(id, on) {
+    if (toggling[id] && toggling[id].busy) return;
+    toggling[id] = { busy: true, text: 'Waiting for your approval in the BrowserForge extension (its popup or approval window)...' };
+    render();
+    fetch('/dashboard/plugins/' + encodeURIComponent(id) + '/' + (on ? 'enable' : 'disable'), { method: 'POST', headers: { authorization: 'Bearer ' + token }, cache: 'no-store' })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (b) { return { ok: r.ok, status: r.status, body: b }; }); })
+      .then(function (x) {
+        toggling[id] = { busy: false, ok: x.ok, text: x.ok ? (x.body.changed === false ? 'It was already ' + (on ? 'on' : 'off') + '.' : 'Approved. It takes effect when the BrowserForge server restarts.') : (x.body.error || 'Nothing was changed (' + x.status + ').') };
+        refresh();
+      })
+      .catch(function () { toggling[id] = { busy: false, ok: false, text: 'Could not reach the server. Nothing was changed.' }; render(); });
+  }
+  function switchControl(p) {
+    if (p.state !== 'loaded' && p.state !== 'disabled' && p.state !== 'restart') return null;
+    var t = toggling[p.id] || null;
+    var on = p.enabled !== false;
+    var props = { class: 'toggle', type: 'button', onclick: function () { toggle(p.id, !on); } };
+    if (t && t.busy) props.disabled = 'disabled';
+    return [
+      h('div', null, h('button', props, on ? 'Switch off' : 'Switch on'),
+        h('span', { class: 'small muted' }, ' Asks for your approval in the browser extension. It takes effect after a restart.')),
+      t ? h('div', { class: 'small ' + (t.busy || t.ok ? 'muted' : 'err'), role: 'status' }, t.text) : null
+    ];
+  }
+
   function plugins(d) {
     return h('div', null,
       d.plugins.length ? d.plugins.map(function (p) {
         var kind = p.state === 'loaded' ? 'ok' : p.state === 'skipped' ? 'bad' : 'warn';
+        var label = p.state === 'restart' ? 'on after restart' : (p.state === 'loaded' && p.enabled === false) ? 'off after restart' : p.state;
         return h('div', { class: 'card' },
-          h('h2', null, p.id, p.version ? ' ' + p.version : '', badge(p.state, kind)),
+          h('h2', null, p.id, p.version ? ' ' + p.version : '', badge(label, kind)),
           p.description ? h('div', null, p.description) : null,
           p.reason ? h('div', { class: 'small' }, 'Why it is off: ', p.reason) : null,
           p.permissions.length ? [h('h3', null, 'It may'), h('ul', { class: 'plain' }, p.permissions.map(function (x) { return h('li', null, x); }))] : null,
-          p.tools.length ? [h('h3', null, 'Tools'), h('div', null, p.tools.map(function (t) { return [h('code', null, t), ' ']; }))] : null);
+          p.tools.length ? [h('h3', null, 'Tools'), h('div', null, p.tools.map(function (t) { return [h('code', null, t), ' ']; }))] : null,
+          switchControl(p));
       }) : empty('No plugin is installed.'),
-      h('h3', null, 'Manage (in a terminal)'),
-      cmd('browserforge plugin list'), cmd('browserforge plugin search <words>'), cmd('browserforge plugin add <name or folder>'), cmd('browserforge plugin disable <id>'));
+      h('h3', null, 'Install and remove (in a terminal)'),
+      cmd('browserforge plugin list'), cmd('browserforge plugin search <words>'), cmd('browserforge plugin add <name or folder>'), cmd('browserforge plugin remove <id>'));
   }
 
   function skills(d) {

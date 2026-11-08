@@ -22,7 +22,7 @@ export interface ServerConfig {
   port: number;
   extensionToken: string;
   mcpToken: string;
-  /** Only opens the read-only dashboard page's data. Never accepted by /mcp, and the MCP token is never accepted by the dashboard. */
+  /** Opens the dashboard page's data and its one change route (switching a plugin, which still needs a person's approval). Never accepted by /mcp, and the MCP token is never accepted by the dashboard. */
   dashboardToken: string;
   /** Allow tools to return unredacted secrets when the caller passes reveal:true. Off by default. */
   allowReveal: boolean;
