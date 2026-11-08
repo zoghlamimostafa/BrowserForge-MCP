@@ -801,7 +801,7 @@ api.runtime.onMessage.addListener(((msg: any, sender: any, sendResponse: (r: unk
           const s = getSettings();
           return sendResponse({ ok: true, state: {
             connected: runtime.connected, connecting: runtime.connecting, lastError: runtime.lastError, paused: runtime.paused, humanLocked: runtime.humanLocked,
-            yolo: s.yolo, approvalSound: s.approvalSound, agentWindow: s.agentWindow, agentWindowOpen: runtime.agentWindowId !== null, recordHuman: s.recordHuman, recordValues: s.recordValues, recordTask: s.recordTask, serverUrl: s.serverUrl, tokenSet: Boolean(s.token), autoConnect: s.autoConnect, capture: s.capture, browser: browserKind, selectedTabId: runtime.selectedTabId,
+            yolo: s.yolo, approvalSound: s.approvalSound, agentWindow: s.agentWindow, agentWindowOpen: runtime.agentWindowId !== null, recordHuman: s.recordHuman, recordValues: s.recordValues, recordTask: s.recordTask, closedShadow: s.closedShadow === true, serverUrl: s.serverUrl, tokenSet: Boolean(s.token), autoConnect: s.autoConnect, capture: s.capture, browser: browserKind, selectedTabId: runtime.selectedTabId,
             pendingApprovals: [...pendingApprovals.values()].map(({ resolve: _r, ...p }) => p), activity: activity.slice(-80), bodyCaptureAvailable: await bodyCaptureAvailable(), bodyCapturePossible: bodyCapturePossible(),
           } });
         }
@@ -862,6 +862,12 @@ api.runtime.onMessage.addListener(((msg: any, sender: any, sendResponse: (r: unk
           break;
         }
         case 'setSound': await saveSettings({ approvalSound: msg.on === true }); break;
+        case 'setClosedShadow': {
+          // Only a person, in the popup (this handler refuses web pages and content scripts), can switch this on: no tool and no server message reaches it.
+          await saveSettings({ closedShadow: msg.on === true });
+          emitActivity({ action: 'settings', summary: msg.on === true ? 'You let the agent reach into closed shadow roots' : 'Closed shadow roots are off limits to the agent again', outcome: 'ok' });
+          break;
+        }
         case 'getHistory': return sendResponse({ ok: true, history: await loadApprovalHistory() });
         case 'clearHistory': await clearApprovalHistory(); break;
         case 'approve': decideApproval(String(msg.id), msg.approved === true); break;

@@ -30,6 +30,7 @@ async function render(): Promise<void> {
   $<HTMLInputElement>('yoloOn').checked = s.yolo;
   $<HTMLInputElement>('soundOn').checked = s.approvalSound;
   $<HTMLInputElement>('agentWindowOn').checked = s.agentWindow;
+  $<HTMLInputElement>('closedShadowOn').checked = s.closedShadow === true;
   $('agentWindowState').textContent = s.agentWindow ? (s.agentWindowOpen ? 'The agent window is open.' : 'The agent window opens when the agent first navigates.') : 'Off: the agent works in whichever tab is active.';
   $<HTMLButtonElement>('closeAgentWindow').disabled = !s.agentWindowOpen;
   $<HTMLParagraphElement>('recBanner').hidden = !s.recordHuman;
@@ -94,6 +95,7 @@ async function render(): Promise<void> {
 $('takeOver').onclick = () => void send('takeOver').then(render);
 $('handBack').onclick = () => void send('handBack').then(render);
 $('closeAgentWindow').onclick = () => void send('closeAgentWindow').then(render);
+$('closedShadowOn').onchange = (e) => void send('setClosedShadow', { on: (e.target as HTMLInputElement).checked }).then(render);
 $('agentWindowOn').onchange = (e) => void send('setAgentWindow', { on: (e.target as HTMLInputElement).checked }).then(render);
 $('askAgent').onclick = async () => {
   const status = $('askStatus');

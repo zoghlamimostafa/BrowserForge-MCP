@@ -150,6 +150,22 @@ customElements.define('shadow-form',class extends HTMLElement{connectedCallback(
   b.addEventListener('click',()=>window.__saved.push({email:i.value,remember:r.getElementById('rem').checked}));
 }});`);
 
+// A web component with a CLOSED shadow root: the page's own scripts cannot reach it through el.shadowRoot (it is null), only the component keeps a reference.
+// The page exposes what happened inside only through window.__closed(), for tests.
+const SHADOW_CLOSED = page('Closed shadow fixture', `
+<h1>Closed shadow root</h1>
+<closed-form id="cf"></closed-form>`,
+`const state={value:'',clicks:0,secret:'',sent:0};window.__closed=()=>state;
+customElements.define('closed-form',class extends HTMLElement{connectedCallback(){
+  const r=this.attachShadow({mode:'closed'});
+  r.innerHTML='<label>Closed email <input id="ce" type="text" autocomplete="off"></label><button id="cb" type="button">Save closed</button><label>Closed secret <input id="cp" type="password" autocomplete="off" value="hunter2-prefilled"></label><button id="cs" type="button">Send closed</button>';
+  const i=r.getElementById('ce'),pw=r.getElementById('cp');
+  i.addEventListener('input',()=>{state.value=i.value;});
+  pw.addEventListener('input',()=>{state.secret=pw.value;});
+  r.getElementById('cb').addEventListener('click',()=>{state.clicks++;});
+  r.getElementById('cs').addEventListener('click',()=>{state.sent++;});
+}});`);
+
 // Identical controls in the document and sibling/nested roots must not steal a recorded action.
 const nestedShadowPage = (frame = false) => page('Nested shadow fixture', `
 <input aria-label="Repeated field" data-testid="shared" name="second">
@@ -178,7 +194,7 @@ customElements.define('outer-box', class extends HTMLElement {
   }
 });
 customElements.define('closed-box', class extends HTMLElement {
-  connectedCallback() { this.attachShadow({mode:'closed'}).innerHTML='<input name="second" aria-label="Repeated field">'; }
+  connectedCallback() { const r = this.attachShadow({mode:'closed'}); r.innerHTML='<input name="second" aria-label="Repeated field">'; window.__closedInput = r.querySelector('input'); } // the page keeps its own reference, for tests
 });
 const unusual = document.createElement('outer-box');
 unusual.dataset.host = ${JSON.stringify('雪\'"\\ >> host')};
@@ -231,6 +247,7 @@ export function startDemoSite({ port = 0 } = {}) {
     if (p === '/frame-form') return html(FRAME_FORM);
     if (p === '/frames') return html(framesPage(req.headers.host));
     if (p === '/shadow') return html(SHADOW);
+    if (p === '/shadow-closed') return html(SHADOW_CLOSED);
     if (p === '/shadow-nested') return html(nestedShadowPage());
     if (p === '/shadow-frame') return html(nestedShadowPage(true));
     if (p === '/shadow-limits') return html(SHADOW_LIMITS);
