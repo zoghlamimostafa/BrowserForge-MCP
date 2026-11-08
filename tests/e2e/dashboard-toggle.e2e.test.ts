@@ -22,7 +22,7 @@ describe('dashboard: switching a plugin from the page', () => {
   beforeAll(async () => {
     stack = await startStack({ beforeStart: async (home) => { const store = new PluginStore(home); commit(store, await stage(store, HELLO)); } });
     fake = await connectFake(stack.app.port, { token: stack.app.ctx.config.extensionToken });
-    fake.onRequest = () => answer;
+    fake.onRequest = (req) => (req.action === 'status' ? { yolo: false } : answer); // the extension's approval mode is checked first
     await new Promise((r) => setTimeout(r, 150));
     browser = await chromium.launch({ executablePath: findChromium() });
     page = await browser.newPage();
@@ -59,7 +59,7 @@ describe('dashboard: switching a plugin from the page', () => {
   });
 
   it('keeps the waiting message while the person has not answered, and disables the button meanwhile', async () => {
-    fake.onRequest = () => NEVER; // the person has not answered
+    fake.onRequest = (req) => (req.action === 'status' ? { yolo: false } : NEVER); // the person has not answered
     await card().getByRole('button', { name: 'Switch on' }).click();
     await text(card().getByRole('status')).toMatch(/waiting for your approval/i);
     await disabled(card().getByRole('button', { name: 'Switch on' })).toBe(true);

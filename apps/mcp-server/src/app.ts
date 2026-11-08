@@ -246,6 +246,7 @@ export function createApp(overrides: Partial<ServerConfig> & { extraAllowDirs?: 
           if (!dashboardAuthorized(req)) return json(res, 401, { error: 'Unauthorized' }, { 'www-authenticate': 'Bearer realm="browserforge-dashboard"' });
           return json(res, 200, await dashboardData(ctx));
         }
+        // (A non-loopback Host was already refused at the top of this handler, so the DNS-rebinding check covers this route too.)
         const toggle = /^\/dashboard\/plugins\/([^/]+)\/(enable|disable)$/.exec(url.pathname);
         if (toggle) {
           // The only thing the dashboard can change. It needs the dashboard token AND the page's own Origin (so another website or a bare script cannot call it), and

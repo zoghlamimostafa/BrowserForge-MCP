@@ -2,6 +2,7 @@ import { describePermissions } from '@browserforge/plugin-sdk';
 import type { ServerContext } from '../context.js';
 import { deciderStatus } from '../decider.js';
 import { systemStatus } from '../tools/system.js';
+import { grantedLines } from './toggle.js';
 
 /**
  * Everything the dashboard shows. It is built from what the daemon already knows and never includes tokens, secrets, typed values,
@@ -61,7 +62,7 @@ export async function dashboardData(ctx: ServerContext) {
     ...ctx.pluginStore
       .list()
       .filter((r) => r.kind === 'plugin' && !loadedIds.has(r.id) && !ctx.plugins.skipped.some((s) => s.id === r.id))
-      .map((r) => ({ id: r.id, version: r.version, state: (r.enabled ? 'restart' : 'disabled') as 'restart' | 'disabled', enabled: r.enabled, description: '', toolPrefix: '', tools: [] as string[], permissions: describePermissions({ id: r.id, settings: {}, permissions: r.granted } as never) })),
+      .map((r) => ({ id: r.id, version: r.version, state: (r.enabled ? 'restart' : 'disabled') as 'restart' | 'disabled', enabled: r.enabled, description: '', toolPrefix: '', tools: [] as string[], permissions: grantedLines(r.id, r.granted) })),
   ];
 
   return {

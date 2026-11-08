@@ -131,8 +131,9 @@ describe('dashboard security', () => {
     });
 
     it('is unreachable with the MCP token, so an agent cannot use it to change its own tools', async () => {
-      const r = await fetch(`${self()}${route}`, { method: 'POST', headers: { authorization: `Bearer ${app.ctx.config.mcpToken}`, 'content-type': 'application/json' } });
-      expect([401, 403]).toContain(r.status);
+      // With the page's own Origin, so it is the token alone that is judged.
+      const r = await fetch(`${self()}${route}`, { method: 'POST', headers: { authorization: `Bearer ${app.ctx.config.mcpToken}`, origin: self(), 'content-type': 'application/json' } });
+      expect(r.status).toBe(401);
     });
 
     it('sends the token to no address but its own, and has exactly one place that changes anything', () => {
