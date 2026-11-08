@@ -5,7 +5,8 @@ import { startStack, type Stack } from '../helpers/stack.js';
 const kinds = (process.env.BF_BROWSERS ?? 'firefox,chromium').split(',') as ('firefox' | 'chromium')[];
 
 // A closed shadow root is hidden from the page's own scripts. The extension reaches it through the browser's `dom.openOrClosedShadowRoot`,
-// which runs in the extension's isolated world: no JavaScript is put in the page.
+// which runs in the extension's isolated world: no JavaScript is put in the page. Because other extensions (password managers) keep their menus in
+// closed roots, the agent only gets in when a PERSON switches "closed shadow roots" on in the popup; it is off by default.
 describe.each(kinds)('closed shadow roots — %s', (kind) => {
   let stack: Stack;
   let browser: BrowserHandle;
@@ -31,6 +32,24 @@ describe.each(kinds)('closed shadow roots — %s', (kind) => {
   const inner = (d: any) => d.data ?? d;
   const elements = async () => inner(await ok('browser_get_interactive_elements')).elements as any[];
   const find = async (needle: string) => (await elements()).find((e) => JSON.stringify(e).includes(needle));
+
+  it('is OFF by default: nothing inside the closed root is listed or reachable', async () => {
+    expect(((await browser.popupMessage('getState')).state as { closedShadow: boolean }).closedShadow).toBe(false);
+    const all = await elements();
+    expect(JSON.stringify(all)).not.toContain('Closed email');
+    expect(JSON.stringify(all)).not.toContain('Send closed');
+    const r = await call('browser_fill_field', { selector: '#ce', value: 'nope' });
+    expect(r.isError).toBe(true);
+    expect((await inside()).value).toBe('');
+  });
+
+  it('is switched on by a person in the popup (there is no tool that can do it)', async () => {
+    const tools = (await call('system_status')).data;
+    expect(JSON.stringify(tools)).not.toMatch(/closedShadow|closed_shadow/i);
+    await browser.popupMessage('setClosedShadow', { on: true });
+    expect(((await browser.popupMessage('getState')).state as { closedShadow: boolean }).closedShadow).toBe(true);
+    await ok('browser_navigate', { url: stack.demo.url + '/shadow-closed' }); // a fresh page picks the setting up
+  });
 
   it('lists the controls inside the closed root, each once', async () => {
     const all = await elements();
@@ -86,5 +105,12 @@ describe.each(kinds)('closed shadow roots — %s', (kind) => {
       expect((await attempt).isError).toBe(true);
       expect((await inside()).sent).toBe(before);
     });
+  });
+
+  it('hides the closed root again when the person switches it off', async () => {
+    await browser.popupMessage('setClosedShadow', { on: false });
+    await ok('browser_navigate', { url: stack.demo.url + '/shadow-closed' });
+    expect(JSON.stringify(await elements())).not.toContain('Closed email');
+    expect((await call('browser_click', { selector: '#cb' })).isError).toBe(true);
   });
 });

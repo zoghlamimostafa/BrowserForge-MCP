@@ -36,6 +36,8 @@ An optional switch in the popup (**Approvals → YOLO**) that makes every approv
 - STOP and Pause still work and still win.
 - Treat it like leaving your laptop unlocked: any page that manages to steer the agent can then submit forms and send messages as you. Use it on a dedicated browser profile, not your everyday one.
 
+**Closed shadow roots** (popup: *Let the agent reach into closed shadow roots*): **off by default**, per browser. Other extensions, such as password managers, keep their menus in closed roots, so the agent cannot see or click inside one unless a person switches this on. Like YOLO it is written only from the extension's own popup page (the generic `saveSettings` message ignores it, and no tool or server message reaches it), and the content script receives a single yes/no key, never the settings that hold the server token. When it is on, the same rules still apply to what is inside: password values are never returned, typing into a password field and risky clicks still need your approval (tested).
+
 **STOP:** the popup's STOP button cancels in-flight work, denies pending approvals and blocks all agent actions. The agent's `browser_resume` is refused (`PERMISSION_DENIED`) while STOP was pressed by the human; only the popup can resume.
 
 Heuristics are not a guarantee: a site can disguise a harmful button as "Show more". Keep the popup visible during sensitive sessions and use STOP freely. The classification errs toward asking.

@@ -136,11 +136,15 @@ function describe(el: Element) {
  * The shadow root of an element, open or closed. A page hides a closed root from its own scripts (`el.shadowRoot` is null), but the browser gives an
  * extension's content script a way in: `dom.openOrClosedShadowRoot` (Chrome 88+, Firefox 63+). This runs in the extension's isolated world and puts
  * no code in the page, so it does not weaken the rule that an agent never runs JavaScript in the page; the approval gate treats such an element
- * like any other. Roots that were found are remembered, because they can never be detached again.
+ * like any other. It is OFF unless a person turns it on in the popup, because other extensions (password managers) keep their menus in closed
+ * roots. Roots that were found are remembered, because they can never be detached again.
  */
 const knownRoots = new WeakMap<Element, ShadowRoot>();
+/** Set from the popup by a person, never by the agent. Until the stored value has been read it stays false, so a closed root is never reached by accident. */
+let closedAllowed = false;
 function shadowOf(el: Element): ShadowRoot | null {
   if (el.shadowRoot) return el.shadowRoot;
+  if (!closedAllowed) return null;
   const known = knownRoots.get(el);
   if (known) return known;
   let root: ShadowRoot | null = null;
@@ -1285,7 +1289,11 @@ function startRecorder(): void {
   }, true);
   try {
     void Promise.resolve(api.storage.local.get('record')).then((r: { record?: unknown }) => applyRecord(r?.record)).catch(() => undefined);
-    api.storage.onChanged.addListener((ch: Record<string, { newValue?: unknown }>, area: string) => { if (area === 'local' && ch.record) applyRecord(ch.record.newValue); });
+    api.storage.onChanged.addListener((ch: Record<string, { newValue?: unknown }>, area: string) => {
+      if (area === 'local' && ch.record) applyRecord(ch.record.newValue);
+      if (area === 'local' && ch.shadowAccess) closedAllowed = (ch.shadowAccess.newValue as { closed?: unknown } | undefined)?.closed === true;
+    });
+    void Promise.resolve(api.storage.local.get('shadowAccess')).then((r: { shadowAccess?: { closed?: unknown } }) => { closedAllowed = r?.shadowAccess?.closed === true; }).catch(() => undefined);
   } catch {
     /* storage unavailable: recording stays off */
   }

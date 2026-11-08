@@ -77,6 +77,7 @@ describe.each(kinds)('exact recorded shadow scopes — %s', (kind) => {
   });
 
   it('reaches the control inside a closed host (not an identical one elsewhere), and a missing path inside it is still refused', async () => {
+    await browser.popupMessage('setClosedShadow', { on: true }); // off by default; a person turns it on in the popup
     expect((await stack.call('browser_navigate', { url: stack.demo.url + '/shadow-nested' })).isError).toBe(false);
     const locator = { css: 'input[name="second"]', shadow: ['#closed'], label: 'Repeated field', testId: 'shared' };
     const found = await stack.app.ctx.hub.call('resolve_locator', { locator, waitMs: 0 }) as { ref: string };
@@ -84,6 +85,8 @@ describe.each(kinds)('exact recorded shadow scopes — %s', (kind) => {
     expect(await browser.evalInPage<string>('return window.__closedInput.value')).toBe('inside-closed');
     expect(await browser.evalInPage<string>('return document.querySelector("input").value')).toBe(''); // the lookalike outside was not touched
     await expect(stack.app.ctx.hub.call('resolve_locator', { locator: { ...locator, css: 'input[name="nope"]' }, waitMs: 0 })).rejects.toMatchObject({ code: 'ELEMENT_NOT_FOUND' });
+    await browser.popupMessage('setClosedShadow', { on: false });
+    await expect(stack.app.ctx.hub.call('resolve_locator', { locator, waitMs: 0 })).rejects.toMatchObject({ code: 'ELEMENT_NOT_FOUND' }); // and off again means unreachable again
   });
 
   it('preserves a human recording refusal instead of retargeting a clipped host chain or selector', async () => {

@@ -17,6 +17,8 @@ export interface Settings {
   recordValues: boolean;
   /** Optional: what they are doing, used as the example's goal. */
   recordTask: string;
+  /** Let the agent see and click inside CLOSED shadow roots. Off by default: other extensions (password managers) keep their menus there. Only the popup (a human) may change it. */
+  closedShadow: boolean;
   capture: { enabled: boolean; captureBodies: boolean; tabIds: number[] | null; maxBodyBytes: number };
 }
 
@@ -47,6 +49,7 @@ export const DEFAULT_SETTINGS: Settings = {
   agentWindow: false,
   recordValues: false,
   recordTask: '',
+  closedShadow: false,
   capture: { enabled: true, captureBodies: false, tabIds: null, maxBodyBytes: 200_000 },
 };
 
@@ -85,7 +88,7 @@ export function getSettings(): Settings {
 export async function saveSettings(patch: Partial<Settings> = {}): Promise<void> {
   settings = { ...settings, ...patch };
   // Page scripts of this extension must not read the settings (they hold the server token): the recorder gets only its own small key.
-  await api.storage.local.set({ settings, record: { on: settings.recordHuman, values: settings.recordValues, task: settings.recordTask } });
+  await api.storage.local.set({ settings, record: { on: settings.recordHuman, values: settings.recordValues, task: settings.recordTask }, shadowAccess: { closed: settings.closedShadow === true } });
 }
 
 // The activity timeline is kept in memory for the popup and saved to storage (debounced) so it survives the event page / service
