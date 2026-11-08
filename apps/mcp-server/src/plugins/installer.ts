@@ -35,6 +35,14 @@ export function checkSpec(spec: string): string {
   return spec;
 }
 
+/** Replace a symlinked package folder by a real copy of what it points to (without .git and node_modules), so the installed files are the ones that were read. */
+function materializeLink(pkgRoot: string): void {
+  if (!fs.lstatSync(pkgRoot).isSymbolicLink()) return;
+  const target = fs.realpathSync(pkgRoot);
+  fs.unlinkSync(pkgRoot);
+  fs.cpSync(target, pkgRoot, { recursive: true, dereference: true, filter: (p) => !p.split(path.sep).some((part) => part === 'node_modules' || part === '.git') });
+}
+
 /** npm links a local-folder plugin with a relative symlink; moving the staging folder would leave it dangling. */
 function absolutizeLinks(nodeModules: string): void {
   const fix = (entry: string) => {
@@ -70,6 +78,8 @@ export async function stage(store: PluginStore, source: string): Promise<Staged>
     const packageName = deps[0]!;
     const pkgRoot = path.join(stagingDir, 'node_modules', ...packageName.split('/'));
     const { manifest, version } = readManifest(pkgRoot);
+    // A skill is approved as the exact text that was shown. A local folder is linked, not copied, so later edits would reach the agent with no prompt: copy it instead.
+    if (manifest.kind === 'skill') materializeLink(pkgRoot);
     return { manifest, packageName, version, source, stagingDir, pkgRoot };
   } catch (e) {
     fs.rmSync(stagingDir, { recursive: true, force: true });

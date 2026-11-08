@@ -8,8 +8,8 @@ A skill is a folder of text (and optional workflows) that tells your agent how t
 |---|---|
 | **Publish** | An npm package with the keyword `browserforge-skill`, a `package.json` with `"browserforge": { "id": "...", "kind": "skill", "description": "..." }`, and `skills/<name>/SKILL.md` inside ([SKILLS.md](SKILLS.md)). |
 | **Find** | `browserforge skill search <words>` lists packages with that keyword: name, version, **who published it and when**, and a one-line description. It is a search, not a recommendation. |
-| **Install** | `browserforge skill add <npm-name>` (or `<folder>`). It prints **every line** of the instructions the skill gives your agent, as plain text, then asks. `browserforge plugin add` of the same package shows the same text. |
-| **Update** | `browserforge plugin update <id>` shows the new instructions again and asks again. |
+| **Install** | `browserforge skill add <npm-name>` (or `<folder>`). It prints **every line** of the instructions the skill gives your agent, and **every step of every workflow it ships** (the tool and its arguments, so you see the addresses and what it fills in), as plain text, then asks. `browserforge plugin add` of the same package shows the same text. |
+| **Update** | `browserforge plugin update <id>` shows the new text again and asks again. The installed copy is replaced only after you say yes. |
 
 **Not built:** a central registry, ratings, a "reviewed" badge, or signature checks. Anyone can publish with the keyword, and nobody here has reviewed what is on npm. Treat a search result as a lead.
 
@@ -26,7 +26,7 @@ A skill is a folder of text (and optional workflows) that tells your agent how t
 | Make the agent do something consequential (send, pay, submit) | The approval click is yours. | If you approve without reading the prompt. |
 | Send the agent to a website of the author's choice, or have it read your pages | Nothing technical: reading and navigating are not gated. | The agent can be pointed anywhere. Read the skill for URLs. |
 | Tell the agent to ignore your own instructions or the project rules | Nothing technical: it is text. | Your agent may or may not push back. |
-| Hide its real instructions from you at install | The whole text is printed, with control characters, escape codes and right-to-left tricks turned into visible dots, and an over-long skill (more than 400 lines) is refused instead of cut. | A skill that is long, boring and misleading in plain sight. |
+| Hide its real instructions from you at install | The whole text is printed, with control characters, escape codes and right-to-left tricks turned into visible dots, and an over-long skill (more than 400 lines, or more than 200 workflow steps) is refused instead of cut. The skill files shown are found by the same code the agent's loader uses, and a skill installed from a local folder is copied, not linked, so editing that folder later does not change what your agent reads. | A skill that is long, boring and misleading in plain sight. |
 | Change after you installed it | An update shows the new text and asks again. | Nothing watches a package for you between updates. |
 
 So: **read the instructions `skill add` prints**, as you would read a script before running it. If you would not paste it into your agent yourself, do not install it.

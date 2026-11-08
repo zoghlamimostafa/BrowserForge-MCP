@@ -34,6 +34,18 @@ export function loadSkillDir(dir: string, source: string): Skill {
   return { name, description: md.meta.description ?? '', body: md.body, source, dir, requiresTools: list(md.meta['requires-tools']), requiresPlugins: list(md.meta['requires-plugins']), workflows };
 }
 
+/**
+ * Where the skills of an installed-from-npm package are: the package folder itself, and every folder under skills/ that has a SKILL.md.
+ * The install prompt and the agent's loader both use this, so what a person reads before saying yes is exactly what the agent receives.
+ */
+export function skillDirsInPackage(root: string): string[] {
+  const dirs: string[] = [];
+  if (fs.existsSync(path.join(root, 'SKILL.md'))) dirs.push(root);
+  const nested = path.join(root, 'skills');
+  if (fs.existsSync(nested)) for (const d of fs.readdirSync(nested)) if (fs.existsSync(path.join(nested, d, 'SKILL.md'))) dirs.push(path.join(nested, d));
+  return dirs;
+}
+
 /** Skills the user keeps in <config>/skills/<name>/ plus those delivered by installed packages of kind "skill". */
 export function discoverSkills(configDir: string, store: PluginStore, onError: (where: string, e: unknown) => void): Skill[] {
   const out: Skill[] = [];
@@ -48,10 +60,7 @@ export function discoverSkills(configDir: string, store: PluginStore, onError: (
   if (fs.existsSync(userDir)) for (const d of fs.readdirSync(userDir)) add(path.join(userDir, d), 'user');
   for (const rec of store.list()) {
     if (rec.kind !== 'skill' || !rec.enabled) continue;
-    const root = store.pkgRoot(rec);
-    add(root, `skill:${rec.id}`);
-    const nested = path.join(root, 'skills');
-    if (fs.existsSync(nested)) for (const d of fs.readdirSync(nested)) add(path.join(nested, d), `skill:${rec.id}`);
+    for (const dir of skillDirsInPackage(store.pkgRoot(rec))) add(dir, `skill:${rec.id}`);
   }
   const seen = new Set<string>();
   return out.filter((s) => (seen.has(s.name) ? false : (seen.add(s.name), true)));

@@ -201,6 +201,7 @@ describe('the shared skill library: installing and finding skills from npm', () 
     expect(ask.text()).not.toMatch(/runs on this computer with your user rights|It asks permission to|Adds tools named/); // that is for plugins; a skill is text
     expect(ask.questions[0]).toMatch(/Install the skill package demo-skills \(you have read its instructions above\)/);
     expect(store.get('demo-skills')).toMatchObject({ kind: 'skill', enabled: true });
+    expect(fs.lstatSync(store.pkgRoot(store.get('demo-skills')!)).isSymbolicLink()).toBe(false); // a copy of what was shown, not a link to the folder you installed from
     expect(discoverSkills(config, store, () => undefined).map((x) => x.name)).toEqual(['demo']);
     expect(stagingLeft(store)).toEqual([]);
   });
@@ -271,6 +272,57 @@ describe('the shared skill library: installing and finding skills from npm', () 
     expect(fs.existsSync(path.join(config, 'skills/folder-skill/SKILL.md'))).toBe(true);
   });
 
+  it('updating a skill package shows the new text and asks again; nothing changes until a yes', async () => {
+    const store = new PluginStore(tmp());
+    const src = skillPackage({ body: '# Demo\nOriginal instruction.' });
+    await skillAdd(tmp(), src, io([true]), store);
+    fs.writeFileSync(path.join(src, 'skills/demo/SKILL.md'), '---\nname: demo\ndescription: Demo skill\n---\n# Demo\nA NEW instruction nobody saw.\n');
+    // Same version: nothing is applied, and nothing is shown or asked.
+    const same = io([true]);
+    expect(await pluginUpdate(store, 'demo-skills', same)).toBe(false);
+    expect(same.questions).toEqual([]);
+    const pj = JSON.parse(fs.readFileSync(path.join(src, 'package.json'), 'utf8')); pj.version = '1.1.0'; fs.writeFileSync(path.join(src, 'package.json'), JSON.stringify(pj));
+    const no = io([false]);
+    expect(await pluginUpdate(store, 'demo-skills', no)).toBe(false);
+    expect(no.text()).toContain('A NEW instruction nobody saw.');
+    expect(no.questions).toHaveLength(1);
+    const installed = () => fs.readFileSync(path.join(store.pkgRoot(store.get('demo-skills')!), 'skills/demo/SKILL.md'), 'utf8');
+    expect(installed()).toContain('Original instruction.'); // still the old text
+    expect(await pluginUpdate(store, 'demo-skills', io([true]))).toBe(true);
+    expect(installed()).toContain('A NEW instruction nobody saw.');
+  });
+
+  it('shows exactly the skills the agent will load from that package', async () => {
+    const src = skillPackage();
+    fs.mkdirSync(path.join(src, 'skills/second'), { recursive: true });
+    fs.writeFileSync(path.join(src, 'skills/second/SKILL.md'), '---\nname: second\ndescription: Another\n---\nSecond skill body.\n');
+    fs.mkdirSync(path.join(src, 'skills/notaskill'), { recursive: true }); // no SKILL.md: neither shown nor loaded
+    const store = new PluginStore(tmp());
+    const config = tmp();
+    const ask = io([true]);
+    await skillAdd(config, src, ask, store);
+    const shown = [...ask.text().matchAll(/^Skill: (\S+)$/gm)].map((m) => m[1]).sort();
+    const loaded = discoverSkills(config, store, () => undefined).map((x) => x.name).sort();
+    expect(shown).toEqual(['demo', 'second']);
+    expect(loaded).toEqual(shown);
+  });
+
+  it('shows every workflow step, with where it goes, and refuses a skill with too many steps to read', async () => {
+    const src = skillPackage();
+    fs.mkdirSync(path.join(src, 'skills/demo/workflows'), { recursive: true });
+    const steps = [{ tool: 'browser_navigate', args: { url: 'https://example.test/start' }, label: 'go' }, { tool: 'browser_click', args: { selector: '#next' }, approval: 'Really?' }];
+    fs.writeFileSync(path.join(src, 'skills/demo/workflows/tour.json'), JSON.stringify({ name: 'Tour', steps }));
+    const ask = io([false]);
+    await skillAdd(tmp(), src, ask, new PluginStore(tmp()));
+    expect(ask.text()).toMatch(/tour: Tour, 2 steps/);
+    expect(ask.text()).toContain('1. browser_navigate {"url":"https://example.test/start"}');
+    expect(ask.text()).toContain('2. browser_click {"selector":"#next"}  [asks you first]');
+    const big = skillPackage();
+    fs.mkdirSync(path.join(big, 'skills/demo/workflows'), { recursive: true });
+    fs.writeFileSync(path.join(big, 'skills/demo/workflows/huge.json'), JSON.stringify({ name: 'Huge', steps: Array.from({ length: 250 }, () => ({ tool: 'browser_get_page_text', args: {} })) }));
+    await expect(skillAdd(tmp(), big, io([true]), new PluginStore(tmp()))).rejects.toThrow(/workflows of 'demo' are too long to read here \(250 steps\)/);
+  });
+
   describe('skill search', () => {
     const answer = (objects: unknown[]) => (async (u: string) => { urls.push(u); return new Response(JSON.stringify({ objects })); }) as never;
     const urls: string[] = [];
@@ -301,5 +353,6 @@ describe('the shared skill library: installing and finding skills from npm', () 
     expect(plain('a\tb\nc')).toBe('a\tb\nc');
     expect(plain('x\u001b[2Ky\u0007z\u202ew\u200bv\r')).toBe('x\u00b7[2Ky\u00b7z\u00b7w\u00b7v\u00b7');
     expect(plain('plain text, ünïcode and emoji 🙂 stay')).toBe('plain text, ünïcode and emoji 🙂 stay');
+    for (const c of ['\u2028', '\u2029', '\u061c', '\u180e', '\u2060', '\u2064', '\u00ad', '\u202e', '\u2066']) expect(plain(`a${c}b`), JSON.stringify(c)).toBe('a\u00b7b');
   });
 });
