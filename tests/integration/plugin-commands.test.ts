@@ -292,6 +292,42 @@ describe('the shared skill library: installing and finding skills from npm', () 
     expect(installed()).toContain('A NEW instruction nobody saw.');
   });
 
+  it('installs a skill from a folder that sits under a path with node_modules or .git in it', async () => {
+    const base = tmp();
+    const holder = path.join(base, 'work', 'node_modules', '.git', 'my-skills');
+    fs.mkdirSync(holder, { recursive: true });
+    fs.cpSync(skillPackage({ body: '# Demo\nDeep in an odd place.' }), holder, { recursive: true });
+    const store = new PluginStore(tmp());
+    const ask = io([true]);
+    expect(await skillAdd(tmp(), holder, ask, store)).toBe(true);
+    expect(ask.text()).toContain('Deep in an odd place.');
+    expect(fs.readFileSync(path.join(store.pkgRoot(store.get('demo-skills')!), 'skills/demo/SKILL.md'), 'utf8')).toContain('Deep in an odd place.');
+  });
+
+  it('does not copy a node_modules or .git folder that is inside the skill package', async () => {
+    const src = skillPackage();
+    for (const d of ['node_modules/x', '.git/objects']) { fs.mkdirSync(path.join(src, d), { recursive: true }); fs.writeFileSync(path.join(src, d, 'f.txt'), 'x'); }
+    const store = new PluginStore(tmp());
+    await skillAdd(tmp(), src, io([true]), store);
+    const root = store.pkgRoot(store.get('demo-skills')!);
+    expect(fs.existsSync(path.join(root, 'node_modules/x'))).toBe(false);
+    expect(fs.existsSync(path.join(root, '.git'))).toBe(false);
+    expect(fs.existsSync(path.join(root, 'skills/demo/SKILL.md'))).toBe(true);
+  });
+
+  it.skipIf(process.platform === 'win32')('refuses a link inside the folder that points outside it, and installs nothing', async () => {
+    const outside = tmp();
+    fs.writeFileSync(path.join(outside, 'secret.txt'), 'private');
+    const src = skillPackage();
+    fs.symlinkSync(outside, path.join(src, 'skills/demo/docs'), 'dir');
+    const store = new PluginStore(tmp());
+    const ask = io([true]);
+    await expect(skillAdd(tmp(), src, ask, store)).rejects.toThrow(/is a link that points outside the package/);
+    expect(ask.questions).toEqual([]);
+    expect(store.list()).toEqual([]);
+    expect(fs.readdirSync(store.root).filter((f) => f.startsWith('.staging-'))).toEqual([]);
+  });
+
   it('shows exactly the skills the agent will load from that package', async () => {
     const src = skillPackage();
     fs.mkdirSync(path.join(src, 'skills/second'), { recursive: true });

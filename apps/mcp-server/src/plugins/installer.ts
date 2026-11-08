@@ -35,12 +35,27 @@ export function checkSpec(spec: string): string {
   return spec;
 }
 
-/** Replace a symlinked package folder by a real copy of what it points to (without .git and node_modules), so the installed files are the ones that were read. */
+/**
+ * Replace a symlinked package folder by a real copy of what it points to (without .git and node_modules), so the installed files are the ones that were read.
+ * A link inside the folder that points outside it is refused: copying it would pull unrelated files into the plugin store.
+ */
 function materializeLink(pkgRoot: string): void {
   if (!fs.lstatSync(pkgRoot).isSymbolicLink()) return;
   const target = fs.realpathSync(pkgRoot);
+  const inside = (p: string) => { const rel = path.relative(target, p); return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel)); };
+  const skip = (p: string) => path.relative(target, p).split(path.sep).some((part) => part === 'node_modules' || part === '.git'); // judged inside the folder, not by where the folder sits
+  const check = (dir: string): void => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (skip(p)) continue;
+      if (e.isSymbolicLink()) {
+        if (!inside(fs.realpathSync(p))) throw new Error(`'${path.relative(target, p)}' is a link that points outside the package. Replace it with the real file and try again.`);
+      } else if (e.isDirectory()) check(p);
+    }
+  };
+  check(target);
   fs.unlinkSync(pkgRoot);
-  fs.cpSync(target, pkgRoot, { recursive: true, dereference: true, filter: (p) => !p.split(path.sep).some((part) => part === 'node_modules' || part === '.git') });
+  fs.cpSync(target, pkgRoot, { recursive: true, dereference: true, filter: (p) => !skip(p) });
 }
 
 /** npm links a local-folder plugin with a relative symlink; moving the staging folder would leave it dangling. */
@@ -77,9 +92,14 @@ export async function stage(store: PluginStore, source: string): Promise<Staged>
     absolutizeLinks(path.join(stagingDir, 'node_modules'));
     const packageName = deps[0]!;
     const pkgRoot = path.join(stagingDir, 'node_modules', ...packageName.split('/'));
-    const { manifest, version } = readManifest(pkgRoot);
-    // A skill is approved as the exact text that was shown. A local folder is linked, not copied, so later edits would reach the agent with no prompt: copy it instead.
-    if (manifest.kind === 'skill') materializeLink(pkgRoot);
+    let read = readManifest(pkgRoot);
+    // A skill is approved as the exact text that was shown. A local folder is linked, not copied, so later edits would reach the agent with no prompt: copy it instead,
+    // then read the manifest again from the copy, so what is shown is what was copied.
+    if (read.manifest.kind === 'skill') {
+      materializeLink(pkgRoot);
+      read = readManifest(pkgRoot);
+    }
+    const { manifest, version } = read;
     return { manifest, packageName, version, source, stagingDir, pkgRoot };
   } catch (e) {
     fs.rmSync(stagingDir, { recursive: true, force: true });
