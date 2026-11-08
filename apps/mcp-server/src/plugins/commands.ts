@@ -4,7 +4,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describePermissions, ID_RE, PREFIX_RE, samePermissions, type PluginDefinition, type PluginManifest, type SettingValue } from '@browserforge/plugin-sdk';
 import { commit, discard, readManifest, searchNpm, stage, type Staged } from './installer.js';
-import { loadSkillDir } from './skills.js';
+import { loadSkillDir, skillDirsInPackage } from './skills.js';
 import type { Skill } from './types.js';
 import type { PluginStore } from './store.js';
 
@@ -25,12 +25,13 @@ const WARNING =
  */
 export function plain(text: string): string {
   // eslint-disable-next-line no-control-regex
-  return String(text).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, '\u00b7');
+  return String(text).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g, '\u00b7');
 }
 
 /** A skill's whole instructions are shown before anyone installs it. Beyond this the text is too long to read in a terminal, and nobody should approve what they did not read. */
 const SKILL_MAX_LINES = 400;
 const SKILL_MAX_CHARS = 40_000;
+const SKILL_MAX_STEPS = 200;
 
 /** Print a skill the way a person must read it before saying yes: all of it, as plain text, with where it came from. Throws when it is too long to show whole. */
 export function showSkill(skill: Skill, io: Io): void {
@@ -38,26 +39,34 @@ export function showSkill(skill: Skill, io: Io): void {
   if (lines.length > SKILL_MAX_LINES || skill.body.length > SKILL_MAX_CHARS) {
     throw new Error(`The instructions of '${skill.name}' are too long to read here (${lines.length} lines). Read ${path.join(skill.dir, 'SKILL.md')} yourself and, if you trust it, copy the folder into <config>/skills/.`);
   }
-  const workflows = Object.keys(skill.workflows);
+  const workflows = Object.entries(skill.workflows);
+  const stepCount = workflows.reduce((n, [, wf]) => n + wf.steps.length, 0);
+  const stepChars = workflows.reduce((n, [, wf]) => n + JSON.stringify(wf.steps).length, 0);
+  if (stepCount > SKILL_MAX_STEPS || stepChars > SKILL_MAX_CHARS) {
+    throw new Error(`The workflows of '${skill.name}' are too long to read here (${stepCount} steps). Read the files in ${path.join(skill.dir, 'workflows')} yourself and, if you trust them, copy the folder into <config>/skills/.`);
+  }
   io.out(`\nSkill: ${plain(skill.name)}\n${plain(skill.description)}\nIt gives your agent these instructions (written by its author, not by you), all ${lines.length} lines:\n\n${lines.map((l) => `  | ${l}`).join('\n')}\n`);
-  if (workflows.length) io.out(`\nIt also ships workflows: ${workflows.map(plain).join(', ')} (they only use browser/network/api/form tools and still pause for approvals)\n`);
+  if (workflows.length) {
+    io.out('\nIt also ships workflows (they only use browser/network/api/form tools and still pause for approvals). Their steps, so you see where they go and what they fill in:\n');
+    for (const [key, wf] of workflows) {
+      io.out(`  ${plain(key)}: ${plain(wf.name)}, ${wf.steps.length} step${wf.steps.length === 1 ? '' : 's'}\n`);
+      wf.steps.forEach((st, n) => io.out(`    ${n + 1}. ${plain(st.tool)} ${plain(JSON.stringify(st.args))}${st.approval ? '  [asks you first]' : ''}\n`));
+    }
+  }
   if (skill.requiresTools.length || skill.requiresPlugins.length) io.out(`It needs: ${plain([...skill.requiresTools, ...skill.requiresPlugins].join(', '))}\n`);
   io.out('\n');
 }
 
-/** The skills inside an installed-from-npm package: the package folder itself and anything under skills/. A package that offers none is refused. */
+/** The skills inside a package, found the same way the agent's loader finds them. A package that offers none is refused. */
 function skillsInPackage(root: string): Skill[] {
-  const found: Skill[] = [];
-  if (fs.existsSync(path.join(root, 'SKILL.md'))) found.push(loadSkillDir(root, 'package'));
-  const nested = path.join(root, 'skills');
-  if (fs.existsSync(nested)) for (const d of fs.readdirSync(nested)) if (fs.existsSync(path.join(nested, d, 'SKILL.md'))) found.push(loadSkillDir(path.join(nested, d), 'package'));
+  const found = skillDirsInPackage(root).map((dir) => loadSkillDir(dir, 'package'));
   if (!found.length) throw new Error('This package says it is a skill but contains no SKILL.md, so there is nothing to install.');
   return found;
 }
 
 function show(staged: Staged, io: Io, previous?: { version: string; granted: PluginManifest['permissions'] }): void {
   const m = staged.manifest;
-  io.out(`\n${m.kind === 'skill' ? 'Skill package' : 'Plugin'}: ${m.id}  v${staged.version}  (${plain(staged.packageName)})\n${plain(m.description)}\n`);
+  io.out(`\n${m.kind === 'skill' ? 'Skill package' : 'Plugin'}: ${m.id}  v${plain(staged.version)}  (${plain(staged.packageName)})\n${plain(m.description)}\n`);
   if (m.kind === 'plugin') io.out(`Adds tools named: ${m.toolPrefix}_*\n`);
   const settings = Object.entries(m.settings);
   if (settings.length) io.out(`Settings you will configure:\n${settings.map(([k, s]) => `  - ${plain(k)} (${s.type}${s.required ? ', required' : ''}): ${plain(s.description)}`).join('\n')}\n`);
