@@ -155,13 +155,15 @@ customElements.define('shadow-form',class extends HTMLElement{connectedCallback(
 const SHADOW_CLOSED = page('Closed shadow fixture', `
 <h1>Closed shadow root</h1>
 <closed-form id="cf"></closed-form>`,
-`const state={value:'',clicks:0};window.__closed=()=>state;
+`const state={value:'',clicks:0,secret:'',sent:0};window.__closed=()=>state;
 customElements.define('closed-form',class extends HTMLElement{connectedCallback(){
   const r=this.attachShadow({mode:'closed'});
-  r.innerHTML='<label>Closed email <input id="ce" type="text" autocomplete="off"></label><button id="cb" type="button">Save closed</button>';
-  const i=r.getElementById('ce');
+  r.innerHTML='<label>Closed email <input id="ce" type="text" autocomplete="off"></label><button id="cb" type="button">Save closed</button><label>Closed secret <input id="cp" type="password" autocomplete="off" value="hunter2-prefilled"></label><button id="cs" type="button">Send closed</button>';
+  const i=r.getElementById('ce'),pw=r.getElementById('cp');
   i.addEventListener('input',()=>{state.value=i.value;});
+  pw.addEventListener('input',()=>{state.secret=pw.value;});
   r.getElementById('cb').addEventListener('click',()=>{state.clicks++;});
+  r.getElementById('cs').addEventListener('click',()=>{state.sent++;});
 }});`);
 
 // Identical controls in the document and sibling/nested roots must not steal a recorded action.

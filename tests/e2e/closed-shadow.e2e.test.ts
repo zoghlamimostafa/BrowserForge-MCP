@@ -16,7 +16,7 @@ describe.each(kinds)('closed shadow roots — %s', (kind) => {
     expect((await stack.call('browser_navigate', { url: stack.demo.url + '/shadow-closed' })).isError).toBe(false);
   });
   afterAll(async () => { await browser?.close(); await stack?.close(); });
-  const inside = () => browser.evalInPage<{ value: string; clicks: number }>('return window.__closed()');
+  const inside = () => browser.evalInPage<{ value: string; clicks: number; secret: string; sent: number }>('return window.__closed()');
 
   it('is really closed for the page (the control for this test)', async () => {
     expect(await browser.evalInPage<boolean>('return document.getElementById("cf").shadowRoot === null')).toBe(true);
@@ -48,12 +48,43 @@ describe.each(kinds)('closed shadow roots — %s', (kind) => {
     expect(button?.ref).toBeTruthy();
     await ok('browser_fill_field', { ref: field.ref, value: 'closed@example.test' });
     await ok('browser_click', { ref: button.ref });
-    expect(await inside()).toEqual({ value: 'closed@example.test', clicks: 1 });
+    expect(await inside()).toMatchObject({ value: 'closed@example.test', clicks: 1 });
   });
 
   it('can address the same controls by selector through the closed root', async () => {
     await ok('browser_fill_field', { selector: '#ce', value: 'second@example.test' });
     await ok('browser_click', { selector: '#cb' });
-    expect(await inside()).toEqual({ value: 'second@example.test', clicks: 2 });
+    expect(await inside()).toMatchObject({ value: 'second@example.test', clicks: 2 });
+  });
+
+  // The protections are decided per element, so they must hold the same way for controls reached through a closed root.
+  describe('protections still apply to controls inside a closed root', () => {
+    it('never returns a password value, in the element list or in the forms view', async () => {
+      const all = await elements();
+      const pw = all.find((e) => JSON.stringify(e).includes('Closed secret'));
+      expect(pw, JSON.stringify(all).slice(0, 400)).toBeTruthy();
+      expect(JSON.stringify(await ok('browser_get_interactive_elements'))).not.toContain('hunter2-prefilled');
+      expect(JSON.stringify(await ok('browser_get_forms'))).not.toContain('hunter2-prefilled');
+      expect(JSON.stringify(await ok('browser_get_page_text'))).not.toContain('hunter2-prefilled');
+    });
+
+    it('does not let the agent type into a password field unless a person approves, and a denial changes nothing', async () => {
+      const pw = await find('Closed secret');
+      const attempt = call('browser_fill_field', { ref: pw.ref, value: 'agent-typed-secret' });
+      let asked = false;
+      try { await browser.decideApproval(false); asked = true; } catch { /* refused without a prompt is also fine */ }
+      const result = await attempt;
+      expect(result.isError, `asked=${asked} ${JSON.stringify(result.data)}`).toBe(true);
+      expect((await inside()).secret).toBe('');
+    });
+
+    it('holds a risky click ("Send") for approval, and a denial prevents it', async () => {
+      const send = await find('Send closed');
+      const before = (await inside()).sent;
+      const attempt = call('browser_click', { ref: send.ref });
+      expect(await browser.decideApproval(false)).toBeTruthy();
+      expect((await attempt).isError).toBe(true);
+      expect((await inside()).sent).toBe(before);
+    });
   });
 });
