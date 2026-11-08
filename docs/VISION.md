@@ -119,7 +119,7 @@ The read-only [dashboard](DASHBOARD.md) shows what is installed and which permis
 
 *Today.* Firefox and Chrome (Edge and Brave load the Chrome build) from one code base. Linux is the platform it has been tested on. Windows has a one-file installer that carries its own Node.js (built and smoke-tested on a Windows runner for each release); Windows and macOS are documented in [INSTALL.md](INSTALL.md) with what is and is not known.
 
-*Next.* Tested macOS and Windows installs, then other browsers where the WebExtension model allows it. Mobile (Android) is an idea worth exploring through the same protocol, not something that exists yet.
+*Next.* Tested macOS and Windows installs, then other browsers where the WebExtension model allows it. Mobile (Android) is an idea worth exploring through the same protocol, not something that exists yet: what is known and what is not is written down in [ANDROID.md](ANDROID.md), and the same for Safari in [SAFARI.md](SAFARI.md).
 
 ## Principles that will not change
 
