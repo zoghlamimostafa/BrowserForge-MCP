@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { commit, stage } from '../../apps/mcp-server/src/plugins/installer.js';
@@ -18,9 +19,10 @@ async function start(enabled = true) {
   stacks.push(stack);
   return stack;
 }
-const browser = async (stack: Stack, onRequest?: (req: any) => unknown) => {
+/** The extension is asked its approval mode first (`status`), then the question itself (`request_approval`). `yolo` and `status` shape the first answer. */
+const browser = async (stack: Stack, onApproval?: (req: any) => unknown, opts: { yolo?: unknown; status?: (req: any) => unknown } = {}) => {
   const fake = await connectFake(stack.app.port, { token: stack.app.ctx.config.extensionToken });
-  fake.onRequest = onRequest;
+  fake.onRequest = (req) => (req.action === 'status' ? (opts.status ? opts.status(req) : { yolo: opts.yolo ?? false }) : onApproval?.(req));
   fakes.push(fake);
   await new Promise((r) => setTimeout(r, 150)); // let the hello be processed
   return fake;
@@ -81,18 +83,19 @@ describe('switching a plugin from the dashboard needs a person', () => {
 
   it('changes nothing when the browser cannot answer (error, or a reply that is not a clear yes)', async () => {
     const stack = await start();
-    await browser(stack, () => { throw Object.assign(new Error('Cancelled while waiting for approval'), { code: 'CANCELLED' }); });
+    const fake = await browser(stack, () => { throw Object.assign(new Error('Cancelled while waiting for approval'), { code: 'CANCELLED' }); });
     const r = await post(stack, 'hello', 'disable');
     expect(r.status).toBe(409);
+    expect((await r.json()).error).toMatch(/nothing was changed/i);
+    expect(asked(fake)).toHaveLength(1); // it did get as far as asking
     expect(flag(stack)).toBe(true);
-    for (const reply of [{}, { approved: 'true' }, { approved: 1 }, null]) {
-      stacks.length = 0;
-      const s2 = await start();
-      await browser(s2, () => reply);
-      expect((await post(s2, 'hello', 'disable')).status, JSON.stringify(reply)).toBe(403);
-      expect(flag(s2)).toBe(true);
-      await s2.close();
-    }
+  });
+
+  it.each([{}, { approved: 'true' }, { approved: 1 }, null])('treats the reply %j as a no', async (reply) => {
+    const stack = await start();
+    await browser(stack, () => reply);
+    expect((await post(stack, 'hello', 'disable')).status).toBe(403);
+    expect(flag(stack)).toBe(true);
   });
 
   it('does not ask at all when the plugin is already in the state requested', async () => {
@@ -128,5 +131,61 @@ describe('switching a plugin from the dashboard needs a person', () => {
     }
     expect(asked(fake)).toHaveLength(0);
     expect(flag(stack)).toBe(true);
+  });
+
+  describe('a permission change is never answered by YOLO mode', () => {
+    it('refuses, without asking, while YOLO is on in the extension', async () => {
+      const stack = await start();
+      const fake = await browser(stack, () => ({ approved: true }), { yolo: true });
+      const r = await post(stack, 'hello', 'disable');
+      expect(r.status).toBe(409);
+      expect((await r.json()).error).toMatch(/YOLO.*by itself.*Nothing was changed/s);
+      expect(asked(fake)).toHaveLength(0);
+      expect(flag(stack)).toBe(true);
+    });
+
+    it.each([['not a boolean', { yolo: 'false' }], ['missing', {}], ['a number', { yolo: 0 }], ['null', null]])('refuses, without asking, when the extension\'s answer about YOLO is %s', async (_n, reply) => {
+      const stack = await start();
+      const fake = await browser(stack, () => ({ approved: true }), { status: () => reply });
+      expect((await post(stack, 'hello', 'disable')).status).toBe(409);
+      expect(asked(fake)).toHaveLength(0);
+      expect(flag(stack)).toBe(true);
+    });
+
+    it('refuses, without asking, when the extension cannot answer the status check at all', async () => {
+      const stack = await start();
+      const fake = await browser(stack, () => ({ approved: true }), { status: () => { throw new Error('old extension'); } });
+      expect((await post(stack, 'hello', 'disable')).status).toBe(409);
+      expect(asked(fake)).toHaveLength(0);
+      expect(flag(stack)).toBe(true);
+    });
+  });
+
+  describe('what the person is shown', () => {
+    it('refuses to ask with a text the extension would cut, so nobody approves what they cannot read', async () => {
+      const stack = await start(false);
+      const store = new PluginStore(stack.app.ctx.config.configDir);
+      const rec = store.get('hello')!;
+      store.upsert({ ...rec, granted: { ...rec.granted, exec: Array.from({ length: 10 }, (_v, i) => `a-program-with-a-long-name-${i}`.padEnd(60, 'x')) } });
+      const fake = await browser(stack, () => ({ approved: true }));
+      const r = await post(stack, 'hello', 'enable');
+      expect(r.status).toBe(409);
+      expect((await r.json()).error).toMatch(/too long to show.*see all of it/s);
+      expect(asked(fake)).toHaveLength(0);
+      expect(flag(stack)).toBe(false);
+    });
+
+    it('does not let a damaged plugin record break the data route, and still asks with a plain line', async () => {
+      const stack = await start(false);
+      const file = path.join(stack.app.ctx.config.configDir, 'plugins.json');
+      const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as { plugins: Record<string, unknown>[] };
+      delete raw.plugins[0]!.granted;
+      fs.writeFileSync(file, JSON.stringify(raw));
+      const data = await fetch(`http://127.0.0.1:${stack.app.port}/dashboard/data`, { headers: { authorization: `Bearer ${stack.app.ctx.config.dashboardToken}` } });
+      expect(data.status).toBe(200);
+      const fake = await browser(stack, () => ({ approved: false }));
+      await post(stack, 'hello', 'enable');
+      expect(asked(fake)[0].args.detail).toMatch(/may:/);
+    });
   });
 });

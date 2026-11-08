@@ -27,10 +27,10 @@ The **Plugins** tab has a **Switch off** / **Switch on** button for each plugin.
 
 1. You press the button. The page asks the server.
 2. The server asks **you, in the BrowserForge browser extension** (the approval window or the popup), saying which plugin and, for switching on, what it was allowed to do when you installed it. The page waits and says so.
-3. Only if you approve there is the plugin list changed. A denial, a timeout, no browser connected or a second request while one is waiting changes nothing (the page tells you which).
+3. Only if you approve there is the plugin list changed. A denial, a timeout, no browser connected, YOLO mode on, or a second request while one is waiting changes nothing (the page tells you which).
 4. The running server keeps its current tools until you **restart** it. The card shows "off after restart" or "on after restart" until then, and you can press the button again to undo it.
 
-What it cannot do: install a plugin, remove one, or give a plugin more than you approved at install (if a plugin later asks for more, it stays off). If YOLO mode is on in the extension, every approval passes automatically, this one included; that is what YOLO means.
+What it cannot do: install a plugin, remove one, or give a plugin more than you approved at install (if a plugin later asks for more, it stays off). While **YOLO mode** is on in the extension (it approves everything by itself) the switch refuses and asks nothing, because a permission change has to be a person's answer: switch YOLO off in the popup first, or use the terminal. It also refuses when what the plugin may do is too long to show in the approval prompt, so nobody approves what they cannot read.
 
 ## How it stays safe
 
