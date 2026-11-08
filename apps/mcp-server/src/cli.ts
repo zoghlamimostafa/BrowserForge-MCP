@@ -24,7 +24,7 @@ Usage:
   browserforge setup  [--port N]                                         Step-by-step setup for your system: server, extension, AI client
   browserforge extension <chrome|chrome-bodies|firefox>                  Print the folder of the built extension to load in the browser
   browserforge tokens                                                    Print token file locations (and the extension token)
-  browserforge dashboard [--print] [--port N]                            Open the read-only dashboard (tools, plugins, skills, flows, local models) in your browser
+  browserforge dashboard [--print] [--port N]                            Open the dashboard (tools, plugins, skills, flows, local models) in your browser
   browserforge plugin add <npm-name|git-url|./folder> [--yes] | list | remove|enable|disable|update <id> | config <id> [key=value...] | new <id> | validate <folder> | search <words>
   browserforge skill  add <folder> | list | new <name> | export <name> --to <dir>      Plugins and skills (see docs/PLUGINS.md)
   browserforge flow   list | export <id> --format <fmt> [--out FILE] [--defaults] | consolidate <site> --name N | to-skill <id> --name N   Recorded flows (see docs/FLOWS.md)
@@ -184,7 +184,7 @@ async function main(): Promise<void> {
         process.exit(1);
       }
       openUrl(url);
-      process.stdout.write(`Opening the dashboard (read-only, this computer only).\nIf nothing opens, run: browserforge dashboard --print\n`);
+      process.stdout.write(`Opening the dashboard (this computer only).\nIf nothing opens, run: browserforge dashboard --print\n`);
       return;
     }
     case 'plugin':

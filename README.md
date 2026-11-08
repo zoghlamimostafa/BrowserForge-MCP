@@ -143,7 +143,7 @@ Exported scripts stop before submits, sends and uploads unless you say `FLOW_CON
 
 ### A dashboard for what is installed
 
-`browserforge dashboard` opens a read-only page on your own computer: connected browsers, MCP sessions and every tool, the plugins and skills you installed (with the permissions you approved, in plain words), recorded flows and how the local models are doing. It changes nothing and has its own token. Details: [docs/DASHBOARD.md](docs/DASHBOARD.md).
+`browserforge dashboard` opens a page on your own computer: connected browsers, MCP sessions and every tool, the plugins and skills you installed (with the permissions you approved, in plain words), recorded flows and how the local models are doing. It only reads, except that you can switch a plugin on or off, and only after you approve it in the browser extension. It has its own token. Details: [docs/DASHBOARD.md](docs/DASHBOARD.md).
 
 ## Extend BrowserForge: plugins and skills
 

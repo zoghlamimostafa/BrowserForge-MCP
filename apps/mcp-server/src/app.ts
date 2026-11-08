@@ -26,6 +26,8 @@ import { ProfileStore } from './profiles.js';
 import { AskQueue } from './asks.js';
 import { systemStatus } from './tools/system.js';
 import { dashboardData } from './dashboard/data.js';
+import { togglePlugin } from './dashboard/toggle.js';
+import { ID_RE } from '@browserforge/plugin-sdk';
 import { DASHBOARD_CSS, DASHBOARD_HTML, DASHBOARD_JS } from './dashboard/page.js';
 import { validateWorkflowStep } from './tools/workflow.js';
 import { WorkflowEngine } from './workflow.js';
@@ -243,6 +245,21 @@ export function createApp(overrides: Partial<ServerConfig> & { extraAllowDirs?: 
           if (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`) return json(res, 403, { error: 'Cross-origin requests are not allowed' });
           if (!dashboardAuthorized(req)) return json(res, 401, { error: 'Unauthorized' }, { 'www-authenticate': 'Bearer realm="browserforge-dashboard"' });
           return json(res, 200, await dashboardData(ctx));
+        }
+        const toggle = /^\/dashboard\/plugins\/([^/]+)\/(enable|disable)$/.exec(url.pathname);
+        if (toggle) {
+          // The only thing the dashboard can change. It needs the dashboard token AND the page's own Origin (so another website or a bare script cannot call it), and
+          // even then nothing happens until a person approves it in the browser extension.
+          if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' }, { allow: 'POST' });
+          if (req.headers.origin !== `http://${req.headers.host}`) return json(res, 403, { error: 'Cross-origin requests are not allowed' });
+          if (!dashboardAuthorized(req)) return json(res, 401, { error: 'Unauthorized' }, { 'www-authenticate': 'Bearer realm="browserforge-dashboard"' });
+          let id = '';
+          try { id = decodeURIComponent(toggle[1]!); } catch { /* malformed percent-encoding: not a plugin id */ }
+          if (!ID_RE.test(id)) return json(res, 404, { error: 'No such plugin' });
+          const ac = new AbortController();
+          res.on('close', () => ac.abort());
+          const r = await togglePlugin(ctx, id, toggle[2] === 'enable', ac.signal);
+          return json(res, r.status, r.body);
         }
         // Browser-originated requests (CSRF / DNS rebinding) are never legitimate for authenticated endpoints.
         if (!originAllowed(req) || req.method === 'OPTIONS') return json(res, 403, { error: 'Cross-origin requests are not allowed' });

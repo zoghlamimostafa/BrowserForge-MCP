@@ -88,7 +88,7 @@ flowchart LR
 | **Memory** | Reference documents (BM25), run traces, per-site cards. | [packages/knowledge](../packages/knowledge) · [SITES.md](SITES.md) |
 | **Flows** | Recorded tasks, consolidation, exports, replay without a model. | [packages/flows](../packages/flows) · [FLOWS.md](FLOWS.md) |
 | **Local deciders** | Optional Qwen (Ollama) and Laya (Ollaya) that choose one routine step at a time, supervised by your agent. | [FINETUNING.md](FINETUNING.md) · [SECURITY.md](SECURITY.md) |
-| **Dashboard** | A read-only local page: tools, plugins with their approved permissions, skills, flows, local models. | [DASHBOARD.md](DASHBOARD.md) · `browserforge dashboard` |
+| **Dashboard** | A local page: tools, plugins with their approved permissions (and a switch that waits for your approval in the extension), skills, flows, local models. | [DASHBOARD.md](DASHBOARD.md) · `browserforge dashboard` |
 | **Plugins and skills** | Extension points anyone can write without touching the core. | [PLUGINS.md](PLUGINS.md) · [SKILLS.md](SKILLS.md) · [plugins/rendercv](../plugins/rendercv) · [skills/job-apply](../skills/job-apply) |
 
 ## Long-term vision

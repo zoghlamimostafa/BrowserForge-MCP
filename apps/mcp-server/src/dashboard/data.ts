@@ -4,7 +4,7 @@ import { deciderStatus } from '../decider.js';
 import { systemStatus } from '../tools/system.js';
 
 /**
- * Everything the read-only dashboard shows. It is built from what the daemon already knows and never includes tokens, secrets, typed values,
+ * Everything the dashboard shows. It is built from what the daemon already knows and never includes tokens, secrets, typed values,
  * page content or profile data. Plugin and skill texts are written by other people: the page shows them as plain text only.
  */
 
@@ -49,17 +49,19 @@ export async function dashboardData(ctx: ServerContext) {
       id: p.manifest.id,
       version: p.version,
       state: 'loaded' as const,
+      // What the list says now. A plugin switched off from the page is still loaded until the server restarts.
+      enabled: ctx.pluginStore.get(p.manifest.id)?.enabled !== false,
       description: clip(p.manifest.description, 300),
       toolPrefix: p.manifest.toolPrefix ?? '',
       tools: p.tools.map((t) => t.name),
       permissions: describePermissions({ ...p.manifest, permissions: p.granted }),
     })),
     ...ctx.plugins.skipped.map((s) => ({ id: s.id, version: '', state: 'skipped' as const, description: '', toolPrefix: '', tools: [] as string[], permissions: [] as string[], reason: clip(s.reason, 300) })),
-    // Installed but switched off, and not already listed as loaded or skipped.
+    // Installed but not loaded, and not already listed as skipped: switched off, or switched on and waiting for the next restart.
     ...ctx.pluginStore
       .list()
-      .filter((r) => r.kind === 'plugin' && !r.enabled && !loadedIds.has(r.id))
-      .map((r) => ({ id: r.id, version: r.version, state: 'disabled' as const, description: '', toolPrefix: '', tools: [] as string[], permissions: [] as string[] })),
+      .filter((r) => r.kind === 'plugin' && !loadedIds.has(r.id) && !ctx.plugins.skipped.some((s) => s.id === r.id))
+      .map((r) => ({ id: r.id, version: r.version, state: (r.enabled ? 'restart' : 'disabled') as 'restart' | 'disabled', enabled: r.enabled, description: '', toolPrefix: '', tools: [] as string[], permissions: describePermissions({ id: r.id, settings: {}, permissions: r.granted } as never) })),
   ];
 
   return {
