@@ -130,6 +130,16 @@ describe('scoring a model', () => {
     expect(majorityOp(runs(5))).toBeDefined();
     expect(sample([1, 2, 3], 10)).toEqual([1, 2, 3]);
   });
+  it('keeps only a short, plain reason for an error: nothing after a colon, no control characters', async () => {
+    const r = await evaluateDecider(runs(2), { model: 'm', url: 'x', ask: async () => { throw new Error(`The local model did not return valid JSON: {"echo":"${SECRET}"}\u001b[2K`); } });
+    expect(JSON.stringify(r)).not.toContain(SECRET);
+    expect(r.errorKinds).toEqual({ 'The local model did not return valid JSON': 4 });
+    const odd = await evaluateDecider(runs(1), { model: 'm', url: 'x', ask: async () => { throw new Error(`\u001b[2Kbad\u0007 ${'x'.repeat(300)}`); } });
+    // eslint-disable-next-line no-control-regex
+    expect(Object.keys(odd.errorKinds).join()).not.toMatch(/[\u001b\u0007]/);
+    expect(Object.keys(odd.errorKinds)[0]!.length).toBeLessThanOrEqual(80);
+  });
+
   it('the report holds numbers only: no goal, control label or page text from a trace', async () => {
     const steps = runs(8);
     const r = await evaluateDecider(steps, { model: 'm', url: 'x', ask: async () => ({ op: 'DONE', target: null, inputKey: null, confidence: 1 }) });
@@ -216,6 +226,8 @@ describe('the command line, against a fake local model server', () => {
     await expect(cli(h, ['eval', '--include', 'unlabelled', '--decider-url', 'http://example.com:11434'])).rejects.toMatchObject({ stderr: expect.stringMatching(/must run on this machine/) });
     await expect(cli(h, ['eval', '--include', 'sometimes'])).rejects.toMatchObject({ stderr: expect.stringMatching(/Invalid --include/) });
     await expect(cli(h, ['eval', '--test', '0'])).rejects.toMatchObject({ stderr: expect.stringMatching(/Invalid --test/) });
+    await expect(cli(h, ['eval', '--include', 'unlabelled', '--limit', 'many'])).rejects.toMatchObject({ stderr: expect.stringMatching(/Invalid --limit/) });
+    await expect(cli(h, ['frobnicate'])).rejects.toMatchObject({ stderr: expect.stringMatching(/Usage: browserforge decider split\|eval/) });
     await expect(cli(h, ['split'])).rejects.toMatchObject({ stderr: expect.stringMatching(/Usage: browserforge decider split --out/) });
   });
 });
