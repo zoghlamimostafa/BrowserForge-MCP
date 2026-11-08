@@ -1,0 +1,113 @@
+name: Store release
+
+# What this does, in two separate steps. Read docs/STORE_RELEASE.md before the first use.
+#
+#   1. A version tag (v*) is pushed: build the store packages and CHECK them (right version, no manifest key, no test files). No credentials are used and
+#      nothing is sent to any store. The packages are kept as a workflow artifact.
+#   2. A person runs it by hand: Actions > Store release > Run workflow, choose the tag, the store, and whether to submit for review. The store jobs
+#      wait for approval in the "store-release" environment. Set "Required reviewers" on that environment BEFORE the first run: GitHub creates an
+#      environment with no protection if it does not exist yet. The store credentials are secrets of that environment, not of the repository.
+#
+# The store jobs install nothing (no npm ci): they run one dependency-free script from the tagged commit, so no package can read the credentials.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      store:
+        description: 'Which store to send the package to'
+        type: choice
+        options: [none, chrome, firefox, both]
+        default: none
+      submit:
+        description: 'Also submit it for review (off: upload only, nothing is published or reviewed)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - id: v
+        run: |
+          V=$(node -p "require('./package.json').version")
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v$V" ]; then
+            echo "The tag $GITHUB_REF_NAME does not match the version in package.json (v$V). Nothing was built."
+            exit 1
+          fi
+      - run: npm ci
+      - run: npm run release
+      # Mozilla asks for the source of a bundled extension. This is the tagged commit as it is in git; the build steps are in the README.
+      - run: git archive --format=zip --prefix="browserforge-mcp-${{ steps.v.outputs.version }}/" -o "artifacts/browserforge-source-${{ steps.v.outputs.version }}.zip" "$GITHUB_SHA"
+      - name: Check both packages (no credentials, nothing is sent)
+        run: |
+          V=${{ steps.v.outputs.version }}
+          node scripts/store-upload.mjs chrome  --zip "artifacts/browserforge-chrome-store-$V.zip"
+          node scripts/store-upload.mjs firefox --zip "artifacts/browserforge-firefox-$V.zip" --source "artifacts/browserforge-source-$V.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: store-packages
+          path: |
+            artifacts/browserforge-chrome-store-${{ steps.v.outputs.version }}.zip
+            artifacts/browserforge-firefox-${{ steps.v.outputs.version }}.zip
+            artifacts/browserforge-source-${{ steps.v.outputs.version }}.zip
+          if-no-files-found: error
+
+  chrome:
+    needs: package
+    # Only by hand, only from a version tag (never from a branch someone could have changed), and only after the environment's reviewers approve.
+    if: github.event_name == 'workflow_dispatch' && github.ref_type == 'tag' && (inputs.store == 'chrome' || inputs.store == 'both')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: store-release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: store-packages
+          path: artifacts
+      - run: |
+          V=${{ needs.package.outputs.version }}
+          if [ "$SUBMIT" = "true" ]; then node scripts/store-upload.mjs chrome --zip "artifacts/browserforge-chrome-store-$V.zip" --upload --publish
+          else node scripts/store-upload.mjs chrome --zip "artifacts/browserforge-chrome-store-$V.zip" --upload; fi
+        env:
+          SUBMIT: ${{ inputs.submit }}
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_ITEM_ID: ${{ secrets.CWS_ITEM_ID }}
+
+  firefox:
+    needs: package
+    if: github.event_name == 'workflow_dispatch' && github.ref_type == 'tag' && (inputs.store == 'firefox' || inputs.store == 'both')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: store-release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: store-packages
+          path: artifacts
+      - run: |
+          V=${{ needs.package.outputs.version }}
+          ARGS="--zip artifacts/browserforge-firefox-$V.zip --source artifacts/browserforge-source-$V.zip --upload"
+          if [ "$SUBMIT" = "true" ]; then ARGS="$ARGS --publish"; fi
+          node scripts/store-upload.mjs firefox $ARGS
+        env:
+          SUBMIT: ${{ inputs.submit }}
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}

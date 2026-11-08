@@ -19,7 +19,7 @@
 - [ ] Update version in the root `package.json`, `apps/*/package.json`, `SERVER_VERSION` in `apps/mcp-server/src/context.ts`, `EXT_VERSION` in `apps/firefox-extension/src/background.ts`
 - [ ] Re-read `docs/LIMITATIONS.md` and `docs/SECURITY.md` for anything that changed
 - [ ] Tag the release; attach the zips
-- [ ] Store uploads use the `*-store-*.zip` files (no manifest `key`); listing text and permission justifications are in [STORE_LISTING.md](STORE_LISTING.md), the privacy policy in [PRIVACY.md](PRIVACY.md)
+- [ ] Store uploads: push the tag, check the *Store release* run is green, then send it by hand from the Actions tab ([STORE_RELEASE.md](STORE_RELEASE.md); untested against the real stores, so upload first, submit second). They use the `*-store-*.zip` files (no manifest `key`); listing text and permission justifications are in [STORE_LISTING.md](STORE_LISTING.md), the privacy policy in [PRIVACY.md](PRIVACY.md)
 
 ## Building and checking the package
 

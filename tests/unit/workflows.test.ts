@@ -43,3 +43,52 @@ describe('the PR agent workflow names', () => {
     expect(doc.jobs.sweep.name).toBe('PR agent #${{ matrix.pr }}');
   });
 });
+
+describe('the store release workflow keeps credentials away from anything that could read them', () => {
+  const text = readFileSync(join(DIR, 'store-release.yml'), 'utf8');
+  const doc = parse(text);
+  const steps = (job: string): { run?: string; uses?: string }[] => doc.jobs[job].steps;
+
+  it('only reads the repository (no write permission anywhere)', () => {
+    expect(doc.permissions).toEqual({ contents: 'read' });
+    for (const job of Object.values<any>(doc.jobs)) expect(job.permissions).toBeUndefined();
+  });
+
+  it('a tag push builds and checks only: no secret, no environment, no store call', () => {
+    expect(JSON.stringify(doc.jobs.package)).not.toMatch(/secrets\./);
+    expect(doc.jobs.package.environment).toBeUndefined();
+    const runs = steps('package').map((s) => s.run ?? '').join('\n');
+    expect(runs).not.toMatch(/--upload|--publish/); // the checks run without them
+    expect(runs).toContain('scripts/store-upload.mjs chrome');
+  });
+
+  it.each(['chrome', 'firefox'])('%s: only by hand, only from a tag, only after the environment approves', (job) => {
+    const j = doc.jobs[job];
+    expect(j.environment).toBe('store-release');
+    expect(j.if).toContain("github.event_name == 'workflow_dispatch'");
+    expect(j.if).toContain("github.ref_type == 'tag'");
+    expect(j.needs).toBe('package');
+  });
+
+  it.each(['chrome', 'firefox'])('%s: installs nothing next to the credentials, and runs only the dependency-free script', (job) => {
+    const all = steps(job).map((s) => `${s.run ?? ''} ${s.uses ?? ''}`).join('\n');
+    expect(all).not.toMatch(/npm (ci|install|i)\b|npx|yarn|pnpm|pip install/);
+    expect(all).toContain('scripts/store-upload.mjs');
+  });
+
+  it('every credential is used by exactly one store job, and none by the other', () => {
+    const own = (job: string) => JSON.stringify(doc.jobs[job]);
+    for (const name of ['CWS_CLIENT_ID', 'CWS_CLIENT_SECRET', 'CWS_REFRESH_TOKEN', 'CWS_PUBLISHER_ID', 'CWS_ITEM_ID']) { expect(own('chrome')).toContain(`secrets.${name}`); expect(own('firefox')).not.toContain(name); }
+    for (const name of ['AMO_JWT_ISSUER', 'AMO_JWT_SECRET']) { expect(own('firefox')).toContain(`secrets.${name}`); expect(own('chrome')).not.toContain(name); }
+  });
+
+  it('never puts a workflow input into a shell command text (inputs travel as environment variables)', () => {
+    for (const job of ['chrome', 'firefox']) for (const s of steps(job)) expect(s.run ?? '').not.toMatch(/\$\{\{\s*inputs\./);
+  });
+
+  it('submits for review only when asked, and --publish never appears on a tag push', () => {
+    expect(doc.on.workflow_dispatch.inputs.submit.default).toBe(false);
+    expect(doc.on.workflow_dispatch.inputs.store.default).toBe('none');
+    expect(doc.on.push.tags).toEqual(['v*']);
+  });
+});
