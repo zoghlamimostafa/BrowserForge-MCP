@@ -197,11 +197,12 @@ async function main(): Promise<void> {
       return;
     }
     case 'decider': {
-      const cfg = buildConfig(common);
       const sub = arg;
+      if (sub !== 'split' && sub !== 'eval') throw new Error('Usage: browserforge decider split|eval');
+      const cfg = buildConfig(common);
       const include = values.include === 'unlabelled' ? 'unlabelled' : values.include && values.include !== 'good' ? (() => { throw new Error('Invalid --include (use good or unlabelled)'); })() : 'good';
       const testPercent = values.test ? Number(values.test) : 20;
-      if (!Number.isFinite(testPercent) || testPercent <= 0 || testPercent >= 100) throw new Error('Invalid --test (a percentage between 1 and 99)');
+      if (!Number.isFinite(testPercent) || testPercent <= 0 || testPercent >= 100) throw new Error('Invalid --test (a percentage above 0 and below 100)');
       const by = values.by === 'host' ? 'host' : values.by && values.by !== 'run' ? (() => { throw new Error('Invalid --by (use run or host)'); })() : 'run';
       const knowledgeDir = path.join(cfg.configDir, 'knowledge');
       const split = loadSplit(knowledgeDir, { include, testPercent, by, seed: values.seed });

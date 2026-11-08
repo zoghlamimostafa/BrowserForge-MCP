@@ -79,7 +79,8 @@ export async function evaluateDecider(
     } catch (e) {
       if (opts.signal?.aborted) throw e;
       errors++; // a model that cannot answer counts as wrong, never as skipped
-      const why = (e instanceof Error ? e.message : String(e)).replace(/\s+/g, ' ').slice(0, 140);
+      // Only the part before the first colon, and short: a message must never carry a piece of what the model said or of a page into the report.
+      const why = (e instanceof Error ? e.message : String(e)).split(':')[0]!.replace(/\s+/g, ' ').replace(/[^\x20-\x7e]/g, '?').trim().slice(0, 80) || 'error';
       errorKinds[why] = (errorKinds[why] ?? 0) + 1;
     }
     opts.onProgress?.(i + 1, picked.length);
