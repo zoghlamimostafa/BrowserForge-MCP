@@ -12,6 +12,7 @@ import * as commands from './plugins/commands.js';
 import { PluginStore } from './plugins/store.js';
 import { discoverSkills } from './plugins/skills.js';
 import { SERVER_VERSION, buildConfig } from './context.js';
+import { evaluateDecider, formatReport, loadSplit, majorityOp, writeSplit } from './decider-eval.js';
 import { readLogs } from '@browserforge/shared';
 import { dashboardUrl, openUrl } from './dashboard/open.js';
 import { EXTENSION_KINDS, findExtensionDir, setupReport, type ExtensionKind } from './setup.js';
@@ -27,6 +28,7 @@ Usage:
   browserforge dashboard [--print] [--port N]                            Open the dashboard (tools, plugins, skills, flows, local models) in your browser
   browserforge plugin add <npm-name|git-url|./folder> [--yes] | list | remove|enable|disable|update <id> | config <id> [key=value...] | new <id> | validate <folder> | search <words>
   browserforge skill  add <folder|npm-name> | search <words> | list | new <name> | export <name> --to <dir>      Skills: text for your agent (see docs/SKILLS.md)
+  browserforge decider split|eval [--include good|unlabelled] [--test 20] [--by run|host] [--model M]... [--limit N]   Split your traces and measure a local model on the held-out steps (see docs/FINETUNING.md)
   browserforge flow   list | export <id> --format <fmt> [--out FILE] [--defaults] | consolidate <site> --name N | to-skill <id> --name N   Recorded flows (see docs/FLOWS.md)
   browserforge logs   [--tail N] [--level debug|info|warn|error] [--since 30m|2h|1d]   Read the saved log (see docs/TROUBLESHOOTING.md)
   browserforge diagnostics [--since 1d]                                   A report to paste into a bug: versions, settings, recent warnings and errors
@@ -79,6 +81,13 @@ async function main(): Promise<void> {
       dir: { type: 'string' },
       format: { type: 'string' },
       out: { type: 'string' },
+      model: { type: 'string', multiple: true },
+      include: { type: 'string' },
+      test: { type: 'string' },
+      by: { type: 'string' },
+      seed: { type: 'string' },
+      limit: { type: 'string' },
+      json: { type: 'string' },
       defaults: { type: 'boolean' },
       name: { type: 'string' },
       description: { type: 'string' },
@@ -186,6 +195,39 @@ async function main(): Promise<void> {
       openUrl(url);
       process.stdout.write(`Opening the dashboard (this computer only).\nIf nothing opens, run: browserforge dashboard --print\n`);
       return;
+    }
+    case 'decider': {
+      const cfg = buildConfig(common);
+      const sub = arg;
+      const include = values.include === 'unlabelled' ? 'unlabelled' : values.include && values.include !== 'good' ? (() => { throw new Error('Invalid --include (use good or unlabelled)'); })() : 'good';
+      const testPercent = values.test ? Number(values.test) : 20;
+      if (!Number.isFinite(testPercent) || testPercent <= 0 || testPercent >= 100) throw new Error('Invalid --test (a percentage between 1 and 99)');
+      const by = values.by === 'host' ? 'host' : values.by && values.by !== 'run' ? (() => { throw new Error('Invalid --by (use run or host)'); })() : 'run';
+      const knowledgeDir = path.join(cfg.configDir, 'knowledge');
+      const split = loadSplit(knowledgeDir, { include, testPercent, by, seed: values.seed });
+      const info = { train: split.train.length, test: split.test.length, by, include };
+      if (sub === 'split') {
+        if (!values.out) throw new Error('Usage: browserforge decider split --out <folder> [--include good|unlabelled] [--test 20] [--by run|host]');
+        const w = writeSplit(path.resolve(values.out), split);
+        process.stdout.write(`Wrote ${w.train} training and ${w.test} test steps (split by ${by}, ${include} runs):\n  ${w.files.join('\n  ')}\nKeep them private: they hold the page controls of your sites.\n`);
+        return;
+      }
+      if (sub === 'eval') {
+        const models = values.model?.length ? values.model : [cfg.decider.model];
+        if (!split.test.length) throw new Error(`No held-out steps (${split.all.length} ${include} steps in all). ${include === 'good' ? 'Few runs are labelled good yet: try --include unlabelled, or label runs first.' : 'Record more with Record me.'}`);
+        const limit = values.limit ? Number(values.limit) : undefined;
+        if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) throw new Error('Invalid --limit');
+        const majority = majorityOp(split.train.length ? split.train : split.all);
+        const reports = [];
+        for (const model of models) {
+          process.stderr.write(`Scoring ${model} on ${Math.min(limit ?? split.test.length, split.test.length)} steps (local model at ${cfg.decider.url})...\n`);
+          reports.push(await evaluateDecider(split.test, { model, url: cfg.decider.url, limit, majority, timeoutMs: cfg.decider.timeoutMs, onProgress: (d, t) => { if (d % 25 === 0 || d === t) process.stderr.write(`  ${d}/${t}\n`); } }));
+        }
+        process.stdout.write(formatReport(reports, info) + '\n');
+        if (values.json) fs.writeFileSync(path.resolve(values.json), JSON.stringify({ info, reports }, null, 2), { mode: 0o600 });
+        return;
+      }
+      throw new Error('Usage: browserforge decider split|eval');
     }
     case 'plugin':
     case 'skill': {
